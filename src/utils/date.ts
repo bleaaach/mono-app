@@ -9,7 +9,7 @@ export const getTodayString = (): string => {
 // 格式化日期显示
 export const formatDate = (date: string | Date, formatStr: string = 'yyyy年MM月dd日'): string => {
   const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, formatStr, { locale: zhCN });
+  return format(d, formatStr, zhCN ? { locale: zhCN } : undefined);
 };
 
 // 获取相对时间描述
@@ -59,6 +59,11 @@ export const getDayName = (date: string | Date): string => {
 // 获取当前时间字符串
 export const getCurrentTime = (): string => {
   return format(new Date(), 'HH:mm');
+};
+
+// 格式化时间显示 (HH:mm)
+export const formatTime = (date: Date): string => {
+  return format(date, 'HH:mm');
 };
 
 // 生成唯一ID
