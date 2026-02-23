@@ -1,0 +1,12 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@10.9.3
+2 info using node@v22.18.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\Ayano\Desktop\mono-app\.npmrc
+5 silly config load:file:D:\DATA\SPB_Data\.npmrc
+6 silly config load:file:D:\Program Files\nodejs\node_global\etc\npmrc
+7 verbose title npm start
+8 verbose argv "start"
+9 verbose logfile logs-max:10 dir:C:\Users\Ayano\Desktop\mono-app\%APPDATA%\npm-cache\_logs\2026-02-23T01_04_41_459Z-
+10 verbose logfile C:\Users\Ayano\Desktop\mono-app\%APPDATA%\npm-cache\_logs\2026-02-23T01_04_41_459Z-debug-0.log
+11 silly logfile done cleaning log files
