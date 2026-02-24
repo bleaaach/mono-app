@@ -16,6 +16,17 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LifeLogCategory, LifeLogEntry, LogField } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
+import {
+  MovieIcon,
+  ReadIcon,
+  RestaurantIcon,
+  MusicIcon,
+  GameIcon,
+  ArtIcon,
+  CookIcon,
+  TravelIcon,
+  OtherIcon,
+} from '../components/Icons';
 
 type LifeLogStackParamList = {
   LifeLogHome: undefined;
@@ -25,14 +36,38 @@ type LifeLogStackParamList = {
 
 type NavigationProp = NativeStackNavigationProp<LifeLogStackParamList>;
 
-// 默认示例分类
+const CATEGORY_ICON_MAP: { [key: string]: React.FC<{ size?: number; color?: string }> } = {
+  'movie': MovieIcon,
+  'book': ReadIcon,
+  'restaurant': RestaurantIcon,
+  'music': MusicIcon,
+  'game': GameIcon,
+  'art': ArtIcon,
+  'cook': CookIcon,
+  'travel': TravelIcon,
+  'other': OtherIcon,
+};
+
+const getCategoryIconComponent = (iconName: string): React.FC<{ size?: number; color?: string }> => {
+  return CATEGORY_ICON_MAP[iconName] || OtherIcon;
+};
+
+const LEGACY_EMOJI_TO_ICON: { [key: string]: string } = {
+  '🎬': 'movie', '📚': 'book', '🍽️': 'restaurant', '🎵': 'music',
+  '🎮': 'game', '🎨': 'art', '🍳': 'cook', '✈️': 'travel',
+};
+
+const convertLegacyIcon = (icon: string): string => {
+  return LEGACY_EMOJI_TO_ICON[icon] || icon;
+};
+
 const DEFAULT_CATEGORIES: LifeLogCategory[] = [
   {
     id: 'movie',
     name: '观影记录',
     description: '记录看过的电影',
     color: '#000000',
-    icon: '🎬',
+    icon: 'movie',
     fields: [
       { id: 'title', name: '电影名称', type: 'text', required: true, placeholder: '输入电影名称' },
       { id: 'director', name: '导演', type: 'text', required: false, placeholder: '导演姓名' },
@@ -48,7 +83,7 @@ const DEFAULT_CATEGORIES: LifeLogCategory[] = [
     name: '阅读记录',
     description: '记录读过的书',
     color: '#333333',
-    icon: '📚',
+    icon: 'book',
     fields: [
       { id: 'title', name: '书名', type: 'text', required: true, placeholder: '输入书名' },
       { id: 'author', name: '作者', type: 'text', required: false, placeholder: '作者姓名' },
@@ -63,7 +98,7 @@ const DEFAULT_CATEGORIES: LifeLogCategory[] = [
     name: '美食记录',
     description: '记录吃过的美食',
     color: '#666666',
-    icon: '🍽️',
+    icon: 'restaurant',
     fields: [
       { id: 'name', name: '店名', type: 'text', required: true, placeholder: '餐厅名称' },
       { id: 'dish', name: '菜品', type: 'text', required: true, placeholder: '吃了什么' },
@@ -215,7 +250,9 @@ export default function LifeLogHomeScreen() {
                 onLongPress={() => deleteCategory(category)}
               >
                 <View style={styles.categoryHeader}>
-                  <Text style={styles.categoryIcon}>{category.icon}</Text>
+                  <View style={styles.categoryIcon}>
+                    {React.createElement(getCategoryIconComponent(convertLegacyIcon(category.icon)), { size: 24, color: category.color || '#000000' })}
+                  </View>
                   <View style={styles.categoryInfo}>
                     <Text style={styles.categoryName}>{category.name}</Text>
                     {category.description && (

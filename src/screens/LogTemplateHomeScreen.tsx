@@ -17,17 +17,41 @@ import { LifeLogCategory, LifeLogEntry } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
 import type { LogStackParamList } from '../navigation/LogNavigator';
+import {
+  MovieIcon,
+  CoffeeIcon,
+  WriteIcon,
+  OtherIcon,
+} from '../components/Icons';
 
 type NavigationProp = NativeStackNavigationProp<LogStackParamList>;
 
-// 默认示例模板
+const TEMPLATE_ICON_MAP: { [key: string]: React.FC<{ size?: number; color?: string }> } = {
+  'movie': MovieIcon,
+  'coffee': CoffeeIcon,
+  'write': WriteIcon,
+  'other': OtherIcon,
+};
+
+const getTemplateIconComponent = (iconName: string): React.FC<{ size?: number; color?: string }> => {
+  return TEMPLATE_ICON_MAP[iconName] || OtherIcon;
+};
+
+const LEGACY_EMOJI_TO_ICON: { [key: string]: string } = {
+  '🎬': 'movie', '☕': 'coffee', '📝': 'write',
+};
+
+const convertLegacyIcon = (icon: string): string => {
+  return LEGACY_EMOJI_TO_ICON[icon] || icon;
+};
+
 const DEFAULT_TEMPLATES: LifeLogCategory[] = [
   {
     id: 'movie',
     name: '观影记录',
     description: '记录看过的电影',
     color: '#000000',
-    icon: '🎬',
+    icon: 'movie',
     fields: [
       { id: 'title', name: '电影名称', type: 'text', required: true, placeholder: '输入电影名称' },
       { id: 'director', name: '导演', type: 'text', required: false, placeholder: '导演姓名' },
@@ -43,7 +67,7 @@ const DEFAULT_TEMPLATES: LifeLogCategory[] = [
     name: '咖啡测评',
     description: '记录喝过的咖啡',
     color: '#333333',
-    icon: '☕',
+    icon: 'coffee',
     fields: [
       { id: 'brand', name: '品牌', type: 'text', required: true, placeholder: '咖啡品牌' },
       { id: 'origin', name: '产地', type: 'text', required: false, placeholder: '咖啡豆产地' },
@@ -107,7 +131,7 @@ export default function LogTemplateHomeScreen() {
       name: newTemplateName.trim(),
       description: '',
       color: '#000000',
-      icon: '📝',
+      icon: 'write',
       fields: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -190,7 +214,9 @@ export default function LogTemplateHomeScreen() {
                 onLongPress={() => deleteTemplate(template)}
               >
                 <View style={styles.templateHeader}>
-                  <Text style={styles.templateIcon}>{template.icon}</Text>
+                  <View style={styles.templateIcon}>
+                    {React.createElement(getTemplateIconComponent(convertLegacyIcon(template.icon)), { size: 24, color: template.color || '#000000' })}
+                  </View>
                   <View style={styles.templateInfo}>
                     <Text style={styles.templateName}>{template.name}</Text>
                     {template.description ? (

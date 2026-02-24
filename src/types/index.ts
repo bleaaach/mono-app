@@ -112,12 +112,31 @@ export interface InventoryItem {
   createdAt: string;
 }
 
+// 活动分组
+export interface ActivityGroup {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  createdAt: string;
+}
+
 // 活动类型
 export interface Activity {
   id: string;
   name: string;
   icon: string;
   color: string;
+  groupId?: string;
+  createdAt: string;
+}
+
+// 时间目标
+export interface TimeGoal {
+  id: string;
+  activityId: string;
+  targetDuration: number; // 每日目标时长（分钟）
+  daysOfWeek: number[]; // 生效的星期 [1,2,3,4,5] 周一到周五
   createdAt: string;
 }
 
@@ -132,6 +151,7 @@ export interface TimeEntry {
   endTime: string;
   duration: number;
   date: string;
+  note?: string;
   linkedTodos?: string[];
   linkedHabits?: string[];
 }
@@ -176,7 +196,107 @@ export interface LifeLogEntry {
   updatedAt: string;
 }
 
-// 导航类型
+// ==================== 收纳模块类型 ====================
+
+// 空间
+export interface StorageSpace {
+  id: string;
+  name: string;
+  parentId: string | null;
+  level: number;
+  path: string;
+  icon?: string;
+  color?: string;
+  images?: string[];
+  note?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 物品状态
+export type StorageItemStatus = 'normal' | 'borrowed' | 'repairing' | 'discarded';
+
+// 借还信息
+export interface BorrowInfo {
+  borrower: string;
+  borrowDate: string;
+  expectedReturnDate?: string;
+  actualReturnDate?: string;
+  note?: string;
+}
+
+// 物品
+export interface StorageItem {
+  id: string;
+  name: string;
+  spaceId: string;
+  categoryId: string;
+  images?: string[];
+  quantity: number;
+  unit?: string;
+  brand?: string;
+  model?: string;
+  price?: number;
+  currency: string;
+  purchaseDate?: string;
+  purchaseChannel?: string;
+  expiryDate?: string;
+  warrantyDate?: string;
+  tags: string[];
+  note?: string;
+  status: StorageItemStatus;
+  borrowInfo?: BorrowInfo;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 分类
+export interface StorageCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  parentId?: string;
+  sortOrder: number;
+}
+
+// 标签
+export interface StorageTag {
+  id: string;
+  name: string;
+  color?: string;
+  usageCount: number;
+}
+
+// 筛选条件
+export interface ItemFilters {
+  spaceId?: string;
+  categoryId?: string;
+  tags?: string[];
+  status?: StorageItemStatus;
+  expiryBefore?: string;
+  expiryAfter?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  keyword?: string;
+}
+
+// 统计数据
+export interface StorageStatistics {
+  totalItems: number;
+  totalSpaces: number;
+  totalCategories: number;
+  totalValue: number;
+  newThisMonth: number;
+  expiringSoon: number;
+  borrowedItems: number;
+  categoryDistribution: { categoryId: string; count: number; value: number }[];
+  spaceDistribution: { spaceId: string; count: number }[];
+}
+
+// ==================== 导航类型 ====================
+
 export type RootTabParamList = {
   Todo: undefined;
   Habit: undefined;
@@ -184,6 +304,7 @@ export type RootTabParamList = {
   Inventory: undefined;
   Time: undefined;
   Log: undefined;
+  Settings: undefined;
 };
 
 export type TodoTabParamList = {

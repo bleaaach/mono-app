@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,22 +15,33 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import { PieChart } from 'react-native-chart-kit';
 import { DiaryEntry } from '../types';
 import { Colors } from '../constants/colors';
 import { diaryStorage } from '../utils/storage';
 import { getTodayString, formatDate, generateId } from '../utils/date';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import {
+  SunnyMoodIcon,
+  CloudyMoodIcon,
+  RainyMoodIcon,
+  StormMoodIcon,
+  PeacefulMoodIcon,
+  SparkleIcon,
+} from '../components/Icons';
 
 const MOODS = [
-  { key: 'sunny', label: '晴朗', emoji: '☀️' },
-  { key: 'cloudy', label: '多云', emoji: '☁️' },
-  { key: 'rainy', label: '下雨', emoji: '🌧️' },
-  { key: 'storm', label: '雷雨', emoji: '⚡' },
-  { key: 'moon', label: '宁静', emoji: '🌙' },
-  { key: 'star', label: '美好', emoji: '✨' },
+  { key: 'sunny', label: '晴朗', iconComponent: SunnyMoodIcon },
+  { key: 'cloudy', label: '多云', iconComponent: CloudyMoodIcon },
+  { key: 'rainy', label: '下雨', iconComponent: RainyMoodIcon },
+  { key: 'storm', label: '雷雨', iconComponent: StormMoodIcon },
+  { key: 'peaceful', label: '宁静', iconComponent: PeacefulMoodIcon },
+  { key: 'sparkle', label: '美好', iconComponent: SparkleIcon },
 ] as const;
 
 const DEFAULT_TAGS = ['工作', '生活', '思考', '旅行', '阅读', '运动'];
@@ -38,6 +49,7 @@ const DEFAULT_TAGS = ['工作', '生活', '思考', '旅行', '阅读', '运动'
 type DiaryTab = 'timeline' | 'calendar' | 'stats';
 
 export default function DiaryScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [activeTab, setActiveTab] = useState<DiaryTab>('timeline');
   const [selectedTag, setSelectedTag] = useState<string>('all');
@@ -50,8 +62,8 @@ export default function DiaryScreen() {
   const [editorMood, setEditorMood] = useState<string>('cloudy');
   const [editorTags, setEditorTags] = useState<string[]>([]);
   const [editorImages, setEditorImages] = useState<string[]>([]);
-  const [editorWeather, setEditorWeather] = useState<{type: string; temp: number; description: string} | null>(null);
-  const [editorLocation, setEditorLocation] = useState<{name: string} | null>(null);
+  const [editorWeather, setEditorWeather] = useState<{type: string; temp: number; description: string} | undefined>(undefined);
+  const [editorLocation, setEditorLocation] = useState<{name: string} | undefined>(undefined);
   const [showTagInput, setShowTagInput] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   
@@ -96,16 +108,16 @@ export default function DiaryScreen() {
       setEditorMood(entry.mood || 'cloudy');
       setEditorTags(entry.tags || []);
       setEditorImages(entry.images || []);
-      setEditorWeather(entry.weather || null);
-      setEditorLocation(entry.location || null);
+      setEditorWeather(entry.weather);
+      setEditorLocation(entry.location);
     } else {
       setEditingEntry(null);
       setEditorContent('');
       setEditorMood('cloudy');
       setEditorTags([]);
       setEditorImages([]);
-      setEditorWeather(null);
-      setEditorLocation(null);
+      setEditorWeather(undefined);
+      setEditorLocation(undefined);
     }
     setShowEditor(true);
   };
@@ -339,12 +351,108 @@ export default function DiaryScreen() {
     return entries.filter(e => e.date === dateStr);
   };
 
+  // 计算总记录时长（估算：基于字数，平均每分钟写50字）
+  const getTotalWritingTime = () => {
+    const totalWords = entries.reduce((sum, e) => sum + (e.wordCount || e.content.length), 0);
+    const minutes = Math.ceil(totalWords / 50);
+    if (minutes < 60) return `${minutes}分钟`;
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return remainingMinutes > 0 ? `${hours}小时${remainingMinutes}分` : `${hours}小时`;
+  };
+
+  // 获取心情趋势数据（最近7天）
+  const getMoodTrend = useMemo(() => {
+    const moodScores: Record<string, number> = {
+      sunny: 5, sparkle: 4, peaceful: 3, cloudy: 2, rainy: 1, storm: 0
+    };
+
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+
+    const labels: string[] = [];
+    const data: number[] = [];
+
+    last7Days.forEach((date) => {
+      const dayEntries = entries.filter(e => e.date === date);
+      if (dayEntries.length > 0) {
+        const avgMood = dayEntries.reduce((sum, e) => {
+          return sum + (moodScores[e.mood || 'cloudy'] || 2);
+        }, 0) / dayEntries.length;
+        data.push(Number(avgMood.toFixed(1)));
+      } else {
+        data.push(0);
+      }
+
+      const d = new Date(date);
+      labels.push(`${d.getMonth() + 1}/${d.getDate()}`);
+    });
+
+    return { labels, data };
+  }, [entries]);
+
+  // 获取词云数据（从日记内容中提取关键词）
+  const getWordCloudData = useMemo(() => {
+    const allText = entries.map(e => e.content).join(' ');
+    const words = allText
+      .replace(/[^\u4e00-\u9fa5a-zA-Z]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length >= 2);
+
+    const wordCount: Record<string, number> = {};
+    words.forEach(word => {
+      wordCount[word] = (wordCount[word] || 0) + 1;
+    });
+
+    return Object.entries(wordCount)
+      .filter(([_, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20);
+  }, [entries]);
+
+  // 生成年报数据
+  const getYearlyReport = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const yearEntries = entries.filter(e => new Date(e.date).getFullYear() === currentYear);
+    
+    if (yearEntries.length === 0) return null;
+
+    const monthlyCount = Array(12).fill(0);
+    yearEntries.forEach(e => {
+      const month = new Date(e.date).getMonth();
+      monthlyCount[month]++;
+    });
+
+    const moodDist: Record<string, number> = {};
+    yearEntries.forEach(e => {
+      const mood = e.mood || 'cloudy';
+      moodDist[mood] = (moodDist[mood] || 0) + 1;
+    });
+
+    const totalWords = yearEntries.reduce((sum, e) => sum + (e.wordCount || e.content.length), 0);
+    const favoriteMonth = monthlyCount.indexOf(Math.max(...monthlyCount));
+
+    return {
+      year: currentYear,
+      totalEntries: yearEntries.length,
+      totalWords,
+      monthlyCount,
+      moodDist,
+      favoriteMonth,
+      firstEntry: yearEntries[yearEntries.length - 1]?.date,
+    };
+  }, [entries]);
+
   // 渲染时间线
   const renderTimeline = () => {
     const grouped = groupByDate(filteredEntries);
     
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.timelineContainer} showsVerticalScrollIndicator={false}>
         {/* 写日记入口卡片 */}
         <TouchableOpacity style={styles.writeCard} onPress={() => openEditor()}>
           <View style={styles.writeCardIcon}>
@@ -411,7 +519,7 @@ export default function DiaryScreen() {
                       onPress={() => openDetail(entry)}
                     >
                       <View style={styles.entryHeader}>
-                        <Text style={styles.entryMood}>{mood.emoji}</Text>
+                        {React.createElement(mood.iconComponent, { size: 20, color: '#000000' })}
                         <View style={styles.entryTags}>
                           {entry.tags?.map((tag, i) => (
                             <Text key={i} style={styles.entryTag}>{tag}</Text>
@@ -458,7 +566,7 @@ export default function DiaryScreen() {
     const selectedDiaries = selectedDate ? getDiariesForDate(selectedDate) : [];
 
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.calendarContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.calendarHeader}>
           <Text style={styles.calendarTitle}>{year}年{month + 1}月</Text>
           <View style={styles.calendarNav}>
@@ -574,7 +682,7 @@ export default function DiaryScreen() {
                     onPress={() => openDetail(entry)}
                   >
                     <View style={styles.selectedDateCardHeader}>
-                      <Text style={styles.selectedDateCardMood}>{mood.emoji}</Text>
+                      {React.createElement(mood.iconComponent, { size: 18, color: '#000000' })}
                       <View style={styles.selectedDateCardTags}>
                         {entry.tags?.map((tag, i) => (
                           <Text key={i} style={styles.selectedDateCardTag}>{tag}</Text>
@@ -602,72 +710,217 @@ export default function DiaryScreen() {
   const renderStats = () => {
     const moodDist = getMoodDistribution();
     const tagStats = getTagStats();
+    const moodTrend = getMoodTrend;
+    const wordCloud = getWordCloudData;
+    const yearlyReport = getYearlyReport;
 
     return (
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.statsHeader}>
-          <Text style={styles.statsTitle}>日记回顾</Text>
-          <Text style={styles.statsSubtitle}>记录生活的轨迹</Text>
+      <ScrollView style={styles.statsContainer} showsVerticalScrollIndicator={false}>
+        {/* 顶部概览卡片 */}
+        <View style={styles.overviewCard}>
+          <View style={styles.overviewHeader}>
+            <Text style={styles.overviewTitle}>日记概览</Text>
+            <Text style={styles.overviewSubtitle}>
+              {stats.firstDate !== '-' ? `始于 ${new Date(stats.firstDate).toLocaleDateString('zh-CN')}` : '开始记录你的生活'}
+            </Text>
+          </View>
+          
+          <View style={styles.overviewStats}>
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatNumber}>{stats.total}</Text>
+              <Text style={styles.overviewStatLabel}>总篇数</Text>
+            </View>
+            <View style={styles.overviewStatDivider} />
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatNumber}>{stats.streak}</Text>
+              <Text style={styles.overviewStatLabel}>连续天数</Text>
+            </View>
+            <View style={styles.overviewStatDivider} />
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatNumber}>{getTotalWritingTime()}</Text>
+              <Text style={styles.overviewStatLabel}>累计时长</Text>
+            </View>
+          </View>
         </View>
 
-        {/* 统计卡片 */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.total}</Text>
-            <Text style={styles.statLabel}>篇日记</Text>
+        {/* 心情趋势图表 */}
+        {entries.length >= 1 && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>心情趋势（近7天）</Text>
+            <View style={styles.moodTrendContainer}>
+              {/* Y轴标签 */}
+              <View style={styles.moodTrendYAxis}>
+                <Text style={styles.moodTrendYLabel}>😊</Text>
+                <Text style={styles.moodTrendYLabel}>😐</Text>
+                <Text style={styles.moodTrendYLabel}>😔</Text>
+              </View>
+              
+              {/* 图表区域 */}
+              <View style={styles.moodTrendChart}>
+                {/* 网格线 */}
+                <View style={styles.moodTrendGrid}>
+                  <View style={styles.moodTrendGridLine} />
+                  <View style={styles.moodTrendGridLine} />
+                  <View style={styles.moodTrendGridLine} />
+                </View>
+                
+                {/* 数据点和连线 */}
+                <View style={styles.moodTrendData}>
+                  {moodTrend.data.map((score, index) => {
+                    const hasData = score > 0;
+                    const heightPercent = hasData ? (score / 5) * 100 : 0;
+                    return (
+                      <View key={index} style={styles.moodTrendColumn}>
+                        {hasData && (
+                          <>
+                            {/* 数据点 */}
+                            <View 
+                              style={[
+                                styles.moodTrendDot,
+                                { bottom: `${heightPercent}%` }
+                              ]} 
+                            />
+                            {/* 连线 */}
+                            {index < moodTrend.data.length - 1 && hasData && moodTrend.data[index + 1] > 0 && (
+                              <View style={[
+                                styles.moodTrendLine,
+                                {
+                                  bottom: `${heightPercent}%`,
+                                  transform: [
+                                    { rotate: `${Math.atan2(
+                                      (moodTrend.data[index + 1] / 5) * 100 - heightPercent,
+                                      100
+                                    )}rad` }
+                                  ],
+                                  width: `${Math.sqrt(
+                                    Math.pow(100, 2) + 
+                                    Math.pow((moodTrend.data[index + 1] / 5) * 100 - heightPercent, 2)
+                                  )}%`
+                                }
+                              ]} />
+                            )}
+                          </>
+                        )}
+                        {/* X轴标签 */}
+                        <Text style={styles.moodTrendXLabel}>{moodTrend.labels[index]?.split('/')[1]}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+            
+            {/* 心情说明 */}
+            <View style={styles.moodTrendLegend}>
+              <Text style={styles.moodTrendLegendText}>
+                记录 {moodTrend.data.filter(v => v > 0).length} 天 · 平均心情 {moodTrend.data.filter(v => v > 0).length > 0 ? (moodTrend.data.reduce((a, b) => a + b, 0) / moodTrend.data.filter(v => v > 0).length).toFixed(1) : '-'}/5
+              </Text>
+            </View>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.streak}</Text>
-            <Text style={styles.statLabel}>连续记录</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>
-              {stats.firstDate !== '-' ? new Date(stats.firstDate).getMonth() + 1 + '/' + new Date(stats.firstDate).getDate() : '-'}
-            </Text>
-            <Text style={styles.statLabel}>开始记录</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{stats.thisMonth}</Text>
-            <Text style={styles.statLabel}>本月记录</Text>
-          </View>
-        </View>
+        )}
 
         {/* 心情分布 */}
-        <View style={styles.statsSection}>
-          <Text style={styles.statsSectionTitle}>心情分布</Text>
-          <View style={styles.moodDistContainer}>
-            {moodDist.length === 0 ? (
-              <Text style={styles.statsEmpty}>暂无数据</Text>
-            ) : (
-              moodDist.map(([mood, count]) => {
+        {moodDist.length > 0 && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>心情分布</Text>
+            <View style={styles.moodDistContainer}>
+              {moodDist.map(([mood, count]) => {
                 const moodInfo = getMoodDisplay(mood);
+                const percentage = Math.round((count / stats.total) * 100);
                 return (
                   <View key={mood} style={styles.moodDistItem}>
-                    <Text style={styles.moodDistEmoji}>{moodInfo.emoji}</Text>
-                    <Text style={styles.moodDistCount}>{count}</Text>
+                    {React.createElement(moodInfo.iconComponent, { size: 24, color: '#000000' })}
+                    <Text style={styles.moodDistLabel}>{moodInfo.label}</Text>
+                    <Text style={styles.moodDistPercent}>{percentage}%</Text>
                   </View>
                 );
-              })
-            )}
+              })}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* 常用标签 */}
-        <View style={styles.statsSection}>
-          <Text style={styles.statsSectionTitle}>常用标签</Text>
-          <View style={styles.tagStatsContainer}>
-            {tagStats.length === 0 ? (
-              <Text style={styles.statsEmpty}>暂无数据</Text>
-            ) : (
-              tagStats.map(([tag, count]) => (
+        {tagStats.length > 0 && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>常用标签</Text>
+            <View style={styles.tagStatsContainer}>
+              {tagStats.slice(0, 8).map(([tag, count]) => (
                 <View key={tag} style={styles.tagStatItem}>
-                  <Text style={styles.tagStatName}>{tag}</Text>
+                  <Text style={styles.tagStatName}>#{tag}</Text>
                   <Text style={styles.tagStatCount}>{count}</Text>
                 </View>
-              ))
-            )}
+              ))}
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* 词云展示 */}
+        {wordCloud.length > 0 && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>常用词汇</Text>
+            <View style={styles.wordCloudContainer}>
+              {wordCloud.slice(0, 15).map(([word, count], index) => {
+                const fontSize = Math.max(12, 22 - index * 0.6);
+                return (
+                  <View key={word} style={styles.wordCloudItem}>
+                    <Text style={[styles.wordCloudText, { fontSize }]}>
+                      {word}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* 年度报告 */}
+        {yearlyReport && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>{yearlyReport.year}年度回顾</Text>
+            <View style={styles.yearlyReportCard}>
+              <View style={styles.yearlyReportStats}>
+                <View style={styles.yearlyReportStat}>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReport.totalEntries}</Text>
+                  <Text style={styles.yearlyReportLabel}>篇日记</Text>
+                </View>
+                <View style={styles.yearlyReportStat}>
+                  <Text style={styles.yearlyReportNumber}>
+                    {yearlyReport.totalWords > 1000 
+                      ? (yearlyReport.totalWords / 1000).toFixed(1) + 'k' 
+                      : yearlyReport.totalWords}
+                  </Text>
+                  <Text style={styles.yearlyReportLabel}>字数</Text>
+                </View>
+                <View style={styles.yearlyReportStat}>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReport.favoriteMonth + 1}月</Text>
+                  <Text style={styles.yearlyReportLabel}>最活跃</Text>
+                </View>
+              </View>
+
+              {Object.keys(yearlyReport.moodDist).length > 0 && (
+                <View style={styles.yearlyReportMoods}>
+                  <Text style={styles.yearlyReportMoodTitle}>年度心情 TOP3</Text>
+                  <View style={styles.yearlyReportMoodList}>
+                    {Object.entries(yearlyReport.moodDist)
+                      .sort((a, b) => b[1] - a[1])
+                      .slice(0, 3)
+                      .map(([mood, count]) => {
+                        const moodInfo = getMoodDisplay(mood);
+                        const percentage = Math.round((count / yearlyReport.totalEntries) * 100);
+                        return (
+                          <View key={mood} style={styles.yearlyReportMoodItem}>
+                            {React.createElement(moodInfo.iconComponent, { size: 20, color: '#000000' })}
+                            <Text style={styles.yearlyReportMoodLabel}>{moodInfo.label}</Text>
+                            <Text style={styles.yearlyReportMoodPercent}>{percentage}%</Text>
+                          </View>
+                        );
+                      })}
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
       </ScrollView>
     );
   };
@@ -696,20 +949,38 @@ export default function DiaryScreen() {
           ))}
         </View>
         
-        {activeTab === 'timeline' && (
-          <View style={styles.subNavRight}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="搜索日记..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#999"
-            />
-            <TouchableOpacity style={styles.addBtn} onPress={() => openEditor()}>
-              <Ionicons name="add" size={20} color="#fff" />
+        <View style={styles.subNavRight}>
+          {/* 新功能入口 */}
+          <View style={styles.featureBtns}>
+            <TouchableOpacity 
+              style={styles.featureBtn}
+              onPress={() => navigation.navigate('BookView')}
+            >
+              <Ionicons name="book-outline" size={18} color="#666" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.featureBtn}
+              onPress={() => navigation.navigate('RandomWalk')}
+            >
+              <Ionicons name="shuffle-outline" size={18} color="#666" />
             </TouchableOpacity>
           </View>
-        )}
+          
+          {activeTab === 'timeline' && (
+            <>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="搜索日记..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity style={styles.addBtn} onPress={() => openEditor()}>
+                <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       {/* 内容区域 */}
@@ -786,7 +1057,7 @@ export default function DiaryScreen() {
                     <View style={styles.locationTag}>
                       <Ionicons name="location" size={12} color="#000" />
                       <Text style={styles.locationTagText}>{editorLocation.name}</Text>
-                      <TouchableOpacity onPress={() => setEditorLocation(null)}>
+                      <TouchableOpacity onPress={() => setEditorLocation(undefined)}>
                         <Ionicons name="close" size={14} color="#666" />
                       </TouchableOpacity>
                     </View>
@@ -803,7 +1074,7 @@ export default function DiaryScreen() {
                         style={[styles.moodBtn, editorMood === mood.key && styles.moodBtnActive]}
                         onPress={() => setEditorMood(mood.key)}
                       >
-                        <Text style={styles.moodBtnEmoji}>{mood.emoji}</Text>
+                        {React.createElement(mood.iconComponent, { size: 24, color: editorMood === mood.key ? '#FFFFFF' : '#000000' })}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -879,9 +1150,9 @@ export default function DiaryScreen() {
               <>
                 <View style={styles.detailHeader}>
                   <View style={styles.detailHeaderLeft}>
-                    <Text style={styles.detailMood}>
-                      {getMoodDisplay(detailEntry.mood).emoji}
-                    </Text>
+                    <View style={styles.detailMood}>
+                      {React.createElement(getMoodDisplay(detailEntry.mood).iconComponent, { size: 28, color: '#000000' })}
+                    </View>
                     <View>
                       <Text style={styles.detailDate}>{detailEntry.date}</Text>
                       <View style={styles.detailMetaRow}>
@@ -898,6 +1169,15 @@ export default function DiaryScreen() {
                     </View>
                   </View>
                   <View style={styles.detailActions}>
+                    <TouchableOpacity 
+                      style={styles.detailActionBtn}
+                      onPress={() => {
+                        setShowDetail(false);
+                        navigation.navigate('Share', { entryId: detailEntry.id });
+                      }}
+                    >
+                      <Ionicons name="share-outline" size={20} color="#333" />
+                    </TouchableOpacity>
                     <TouchableOpacity 
                       style={styles.detailActionBtn}
                       onPress={() => {
@@ -1199,6 +1479,52 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 8,
   },
+  // 概览卡片新样式
+  overviewCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    padding: 24,
+    backgroundColor: '#000000',
+    borderRadius: 20,
+  },
+  overviewHeader: {
+    marginBottom: 20,
+  },
+  overviewTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  overviewSubtitle: {
+    fontSize: 14,
+    color: '#999999',
+    marginTop: 4,
+  },
+  overviewStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  overviewStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  overviewStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#333333',
+  },
+  overviewStatNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  overviewStatLabel: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 4,
+  },
+  // 旧样式保留兼容
   statsTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -1213,11 +1539,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 20,
-    gap: 12,
     marginBottom: 24,
+    justifyContent: 'space-between',
   },
   statCard: {
-    width: '22%',
+    width: '23.5%',
     aspectRatio: 1,
     backgroundColor: '#FAFAFA',
     borderRadius: 16,
@@ -1254,14 +1580,29 @@ const styles = StyleSheet.create({
   moodDistContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 20,
+    gap: 16,
   },
   moodDistItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
   moodDistEmoji: {
     fontSize: 32,
     marginBottom: 8,
+  },
+  moodDistLabel: {
+    fontSize: 13,
+    color: '#666666',
+  },
+  moodDistPercent: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
   },
   moodDistCount: {
     fontSize: 16,
@@ -1289,6 +1630,218 @@ const styles = StyleSheet.create({
   tagStatCount: {
     fontSize: 12,
     color: '#666666',
+  },
+  writingTimeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 20,
+    borderRadius: 12,
+  },
+  writingTimeContent: {
+    marginLeft: 16,
+  },
+  writingTimeValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  writingTimeLabel: {
+    fontSize: 13,
+    color: '#999999',
+    marginTop: 4,
+  },
+  // 心情趋势图表新样式
+  moodTrendContainer: {
+    flexDirection: 'row',
+    height: 160,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+  },
+  moodTrendYAxis: {
+    width: 30,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  moodTrendYLabel: {
+    fontSize: 16,
+  },
+  moodTrendChart: {
+    flex: 1,
+    position: 'relative',
+  },
+  moodTrendGrid: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 24,
+    justifyContent: 'space-between',
+  },
+  moodTrendGridLine: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+  },
+  moodTrendData: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: '100%',
+    paddingBottom: 24,
+  },
+  moodTrendColumn: {
+    flex: 1,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  moodTrendDot: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#000000',
+    marginBottom: -6,
+    zIndex: 2,
+  },
+  moodTrendLine: {
+    position: 'absolute',
+    height: 2,
+    backgroundColor: '#000000',
+    left: '50%',
+    transformOrigin: 'left center',
+    zIndex: 1,
+  },
+  moodTrendXLabel: {
+    position: 'absolute',
+    bottom: 0,
+    fontSize: 11,
+    color: '#999999',
+  },
+  moodTrendLegend: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  moodTrendLegendText: {
+    fontSize: 13,
+    color: '#666666',
+  },
+  // 旧样式保留兼容
+  chartContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 8,
+  },
+  chart: {
+    borderRadius: 12,
+  },
+  moodLegend: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  moodLegendText: {
+    fontSize: 12,
+    color: '#999999',
+  },
+  wordCloudContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  wordCloudItem: {
+    alignItems: 'center',
+  },
+  wordCloudText: {
+    color: '#000000',
+    fontWeight: '500',
+  },
+  wordCloudCount: {
+    fontSize: 10,
+    color: '#999999',
+    marginTop: 2,
+  },
+  yearlyReportCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  yearlyReportHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  yearlyReportYear: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  yearlyReportSubtitle: {
+    fontSize: 14,
+    color: '#999999',
+    marginTop: 4,
+  },
+  yearlyReportStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  yearlyReportStat: {
+    alignItems: 'center',
+  },
+  yearlyReportNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  yearlyReportLabel: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 4,
+  },
+  yearlyReportMoods: {
+    marginBottom: 16,
+  },
+  yearlyReportMoodTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  yearlyReportMoodList: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  yearlyReportMoodItem: {
+    alignItems: 'center',
+  },
+  yearlyReportMoodEmoji: {
+    fontSize: 32,
+  },
+  yearlyReportMoodLabel: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 4,
+  },
+  yearlyReportMoodPercent: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginTop: 2,
+  },
+  yearlyReportFirst: {
+    fontSize: 12,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
   },
   modalOverlay: {
     flex: 1,
@@ -1437,7 +1990,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   detailMood: {
-    fontSize: 32,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   detailDate: {
     fontSize: 15,
@@ -1458,6 +2014,19 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  featureBtns: {
+    flexDirection: 'row',
+    gap: 8,
+    marginRight: 8,
+  },
+  featureBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1699,5 +2268,11 @@ const styles = StyleSheet.create({
     color: '#CCCCCC',
     marginTop: 16,
     textAlign: 'right',
+  },
+  statsContainer: {
+    flex: 1,
+  },
+  calendarContainer: {
+    flex: 1,
   },
 });

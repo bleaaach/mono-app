@@ -11,6 +11,7 @@ import DiaryScreen from '../screens/DiaryScreen';
 import InventoryScreen from '../screens/InventoryScreen';
 import TimeScreen from '../screens/TimeScreen';
 import LogNavigator from './LogNavigator';
+import SettingsScreen from '../screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
@@ -62,6 +63,14 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
             <View style={[styles.logLine, focused && styles.logLineActive]} />
             <View style={[styles.logLine, styles.logLineShort, focused && styles.logLineActive]} />
             <View style={[styles.logLine, styles.logLineShorter, focused && styles.logLineActive]} />
+          </View>
+        );
+      case 'Settings':
+        return (
+          <View style={[styles.iconShape, styles.settingsShape, focused && styles.iconShapeActive]}>
+            <View style={[styles.settingsDot, styles.settingsDotTop, focused && styles.settingsDotActive]} />
+            <View style={[styles.settingsDot, styles.settingsDotLeft, focused && styles.settingsDotActive]} />
+            <View style={[styles.settingsDot, styles.settingsDotRight, focused && styles.settingsDotActive]} />
           </View>
         );
       default:
@@ -118,6 +127,11 @@ export default function BottomTabs() {
         name="Log" 
         component={LogNavigator}
         options={{ tabBarLabel: '日志' }}
+      />
+      <Tab.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{ tabBarLabel: '设置' }}
       />
     </Tab.Navigator>
   );
@@ -272,6 +286,34 @@ const styles = StyleSheet.create({
     width: 8,
   },
   logLineActive: {
+    backgroundColor: Colors.background,
+  },
+  // Settings - 设置图标（三个点）
+  settingsShape: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.gray[400],
+    position: 'absolute',
+  },
+  settingsDotTop: {
+    top: 2,
+  },
+  settingsDotLeft: {
+    bottom: 2,
+    left: 2,
+  },
+  settingsDotRight: {
+    bottom: 2,
+    right: 2,
+  },
+  settingsDotActive: {
     backgroundColor: Colors.background,
   },
 });

@@ -9,147 +9,1214 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { InventoryItem } from '../types';
+import { StorageSpace, StorageItem, StorageCategory, StorageTag, ItemFilters, StorageStatistics } from '../types';
+import {
+  storageSpaceStorage,
+  storageItemStorage,
+  storageCategoryStorage,
+  storageTagStorage,
+  storageStatistics,
+} from '../utils/storage';
 import { Colors } from '../constants/colors';
-import { inventoryStorage } from '../utils/storage';
-import { getTodayString, generateId } from '../utils/date';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  HomeSpaceIcon,
+  SofaIcon,
+  BedIcon,
+  KitchenIcon,
+  BathroomIcon,
+  BalconyIcon,
+  BoxIcon,
+  WardrobeIcon,
+  FridgeIcon,
+  BookshelfIcon,
+  TVIcon,
+  DrawerIcon,
+  SearchIcon,
+  ChartIcon,
+  CloseIcon,
+  OtherIcon,
+  ClothingIcon,
+  FoodIcon,
+  BeautyIcon,
+  MedicineIcon,
+  ElectronicsIcon,
+  BooksIcon,
+  HomeGoodsIcon,
+  SportsIcon,
+  ToysIcon,
+  CollectionsIcon,
+  ToolsIcon,
+  PackageIcon,
+  getIconComponent,
+} from '../components/Icons';
 
-// 分类选项
-const CATEGORIES = ['电子产品', '衣物', '书籍', '食品', '药品', '其他'];
+const CATEGORY_ICON_MAP: Record<string, React.FC<{ size?: number; color?: string }>> = {
+  'clothing': ClothingIcon,
+  'food': FoodIcon,
+  'beauty': BeautyIcon,
+  'medicine': MedicineIcon,
+  'electronics': ElectronicsIcon,
+  'books': BooksIcon,
+  'home': HomeGoodsIcon,
+  'homeGoods': HomeGoodsIcon,
+  'sports': SportsIcon,
+  'toys': ToysIcon,
+  'collections': CollectionsIcon,
+  'tools': ToolsIcon,
+  'others': PackageIcon,
+  'package': PackageIcon,
+};
+
+const LEGACY_CATEGORY_EMOJI_MAP: Record<string, string> = {
+  '👔': 'clothing', '🍔': 'food', '💄': 'beauty', '💊': 'medicine',
+  '📱': 'electronics', '📚': 'books', '🏠': 'homeGoods', '⚽': 'sports',
+  '🧸': 'toys', '🎨': 'collections', '🔨': 'tools', '📦': 'package',
+};
+
+const getCategoryIconComponent = (iconName: string): React.FC<{ size?: number; color?: string }> => {
+  const mappedName = LEGACY_CATEGORY_EMOJI_MAP[iconName] || iconName;
+  return CATEGORY_ICON_MAP[mappedName] || getIconComponent(mappedName) || PackageIcon;
+};
+
+const SPACE_ICON_MAP: Record<string, React.FC<{ size?: number; color?: string }>> = {
+  '家': HomeSpaceIcon, '客厅': SofaIcon, '卧室': BedIcon, '厨房': KitchenIcon, '书房': BookshelfIcon,
+  '卫生间': BathroomIcon, '阳台': BalconyIcon, '储藏室': BoxIcon, '衣柜': WardrobeIcon, '冰箱': FridgeIcon,
+  '书架': BookshelfIcon, '电视柜': TVIcon, '床头柜': BedIcon, '抽屉': DrawerIcon, '默认': BoxIcon,
+  'homeSpace': HomeSpaceIcon, 'sofa': SofaIcon, 'bed': BedIcon, 'kitchen': KitchenIcon, 'bookshelf': BookshelfIcon,
+  'bathroom': BathroomIcon, 'balcony': BalconyIcon, 'box': BoxIcon, 'wardrobe': WardrobeIcon, 'fridge': FridgeIcon,
+  'tv': TVIcon, 'drawer': DrawerIcon,
+};
+
+const LEGACY_SPACE_EMOJI_MAP: Record<string, string> = {
+  '🏠': 'homeSpace', '🛋️': 'sofa', '🛏️': 'bed', '🍳': 'kitchen', '📚': 'bookshelf',
+  '🚿': 'bathroom', '🌱': 'balcony', '📦': 'box', '🚪': 'wardrobe', '❄️': 'fridge',
+  '📖': 'bookshelf', '📺': 'tv', '🗄️': 'drawer',
+};
+
+const getSpaceIconComponent = (name: string): React.FC<{ size?: number; color?: string }> => {
+  const mappedName = LEGACY_SPACE_EMOJI_MAP[name] || name;
+  return SPACE_ICON_MAP[mappedName] || SPACE_ICON_MAP['默认'];
+};
+
+// 格式化日期
+const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+// 计算剩余天数
+const getDaysUntilExpiry = (expiryDate: string): number => {
+  const now = new Date();
+  const expiry = new Date(expiryDate);
+  const diffTime = expiry.getTime() - now.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
 
 export default function InventoryScreen() {
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  // 数据状态
+  const [spaces, setSpaces] = useState<StorageSpace[]>([]);
+  const [items, setItems] = useState<StorageItem[]>([]);
+  const [categories, setCategories] = useState<StorageCategory[]>([]);
+  const [tags, setTags] = useState<StorageTag[]>([]);
+  const [statistics, setStatistics] = useState<StorageStatistics | null>(null);
+  
+  // UI状态
+  const [currentView, setCurrentView] = useState<'home' | 'space' | 'category' | 'search' | 'stats'>('home');
+  const [selectedSpace, setSelectedSpace] = useState<StorageSpace | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<StorageCategory | null>(null);
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [showSpaceModal, setShowSpaceModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showItemDetail, setShowItemDetail] = useState<StorageItem | null>(null);
+  const [editingItem, setEditingItem] = useState<StorageItem | null>(null);
+  
+  // 筛选状态
+  const [filters, setFilters] = useState<ItemFilters>({});
   
   // 表单状态
-  const [newItemName, setNewItemName] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState(CATEGORIES[0]);
-  const [newItemLocation, setNewItemLocation] = useState('');
-  const [newItemQuantity, setNewItemQuantity] = useState('1');
-  const [newItemNotes, setNewItemNotes] = useState('');
+  const [formData, setFormData] = useState<Partial<StorageItem>>({
+    name: '',
+    spaceId: '',
+    categoryId: '',
+    quantity: 1,
+    unit: '个',
+    price: undefined,
+    currency: 'CNY',
+    tags: [],
+    status: 'normal',
+    note: '',
+    brand: '',
+    model: '',
+    purchaseDate: '',
+    expiryDate: '',
+    images: [],
+  });
+  
+  // 空间表单
+  const [spaceForm, setSpaceForm] = useState({
+    name: '',
+    parentId: null as string | null,
+    note: '',
+  });
 
-  // 加载数据
-  const loadItems = async () => {
-    const data = await inventoryStorage.get();
-    if (data) setItems(data);
+  // 加载所有数据
+  const loadData = async () => {
+    const [spacesData, itemsData, categoriesData, tagsData, statsData] = await Promise.all([
+      storageSpaceStorage.get(),
+      storageItemStorage.get(),
+      storageCategoryStorage.get(),
+      storageTagStorage.get(),
+      storageStatistics.get(),
+    ]);
+    setSpaces(spacesData);
+    setItems(itemsData);
+    setCategories(categoriesData);
+    setTags(tagsData);
+    setStatistics(statsData);
   };
 
   useFocusEffect(
     useCallback(() => {
-      loadItems();
+      loadData();
     }, [])
   );
 
-  // 保存数据
-  const saveItems = async (newItems: InventoryItem[]) => {
-    setItems(newItems);
-    await inventoryStorage.set(newItems);
+  // 获取当前显示的物品列表
+  const getDisplayedItems = (): StorageItem[] => {
+    let filtered = items;
+    
+    if (currentView === 'space' && selectedSpace) {
+      filtered = items.filter(i => i.spaceId === selectedSpace.id);
+    } else if (currentView === 'category' && selectedCategory) {
+      filtered = items.filter(i => i.categoryId === selectedCategory.id);
+    } else if (currentView === 'search' && searchKeyword) {
+      const keyword = searchKeyword.toLowerCase();
+      filtered = items.filter(i =>
+        i.name.toLowerCase().includes(keyword) ||
+        (i.brand && i.brand.toLowerCase().includes(keyword)) ||
+        (i.note && i.note.toLowerCase().includes(keyword))
+      );
+    }
+    
+    // 应用额外筛选
+    if (filters.status) {
+      filtered = filtered.filter(i => i.status === filters.status);
+    }
+    if (filters.tags && filters.tags.length > 0) {
+      filtered = filtered.filter(i => filters.tags!.some(tag => i.tags.includes(tag)));
+    }
+    
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   };
 
-  // 添加物品
-  const addItem = () => {
-    if (!newItemName.trim()) return;
+  // 获取子空间
+  const getChildSpaces = (parentId: string | null): StorageSpace[] => {
+    return spaces
+      .filter(s => s.parentId === parentId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  };
+
+  // 获取空间路径
+  const getSpacePath = (spaceId: string): string => {
+    const space = spaces.find(s => s.id === spaceId);
+    return space?.path || '';
+  };
+
+  // 获取分类
+  const getCategory = (categoryId: string): StorageCategory | undefined => {
+    return categories.find(c => c.id === categoryId);
+  };
+
+  // 创建空间
+  const handleCreateSpace = async () => {
+    if (!spaceForm.name.trim()) return;
     
-    const newItem: InventoryItem = {
-      id: generateId(),
-      name: newItemName.trim(),
-      category: newItemCategory,
-      location: newItemLocation.trim() || '未指定',
-      quantity: parseInt(newItemQuantity) || 1,
-      notes: newItemNotes.trim(),
-      createdAt: getTodayString(),
-    };
+    const parentSpace = spaceForm.parentId ? spaces.find(s => s.id === spaceForm.parentId) : null;
+    const level = parentSpace ? parentSpace.level + 1 : 0;
+    const path = parentSpace ? `${parentSpace.path}/${spaceForm.name.trim()}` : spaceForm.name.trim();
     
-    saveItems([newItem, ...items]);
+    await storageSpaceStorage.create({
+      name: spaceForm.name.trim(),
+      parentId: spaceForm.parentId,
+      level,
+      path,
+      icon: spaceForm.name.trim() in Object.keys(SPACE_ICON_MAP) ? spaceForm.name.trim() : 'box',
+      sortOrder: spaces.filter(s => s.parentId === spaceForm.parentId).length,
+    });
+    
+    setSpaceForm({ name: '', parentId: null, note: '' });
+    setShowSpaceModal(false);
+    loadData();
+  };
+
+  // 删除空间
+  const handleDeleteSpace = async (space: StorageSpace) => {
+    Alert.alert(
+      '删除空间',
+      `确定要删除"${space.name}"吗？该空间下的所有物品也将被删除。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            await storageSpaceStorage.delete(space.id);
+            if (selectedSpace?.id === space.id) {
+              setSelectedSpace(null);
+              setCurrentView('home');
+            }
+            loadData();
+          },
+        },
+      ]
+    );
+  };
+
+  // 保存物品
+  const handleSaveItem = async () => {
+    if (!formData.name?.trim() || !formData.spaceId || !formData.categoryId) {
+      Alert.alert('提示', '请填写物品名称、选择空间和分类');
+      return;
+    }
+
+    const itemData = {
+      ...formData,
+      name: formData.name.trim(),
+      quantity: formData.quantity || 1,
+      currency: formData.currency || 'CNY',
+      tags: formData.tags || [],
+      status: formData.status || 'normal',
+    } as Omit<StorageItem, 'id' | 'createdAt' | 'updatedAt'>;
+
+    if (editingItem) {
+      await storageItemStorage.update(editingItem.id, itemData);
+    } else {
+      await storageItemStorage.create(itemData);
+    }
+
     resetForm();
     setShowAddModal(false);
+    setEditingItem(null);
+    loadData();
+  };
+
+  // 删除物品
+  const handleDeleteItem = async (item: StorageItem) => {
+    Alert.alert(
+      '删除物品',
+      `确定要删除"${item.name}"吗？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            await storageItemStorage.delete(item.id);
+            setShowItemDetail(null);
+            loadData();
+          },
+        },
+      ]
+    );
   };
 
   // 重置表单
   const resetForm = () => {
-    setNewItemName('');
-    setNewItemCategory(CATEGORIES[0]);
-    setNewItemLocation('');
-    setNewItemQuantity('1');
-    setNewItemNotes('');
-  };
-
-  // 删除物品
-  const deleteItem = (id: string) => {
-    const newItems = items.filter(item => item.id !== id);
-    saveItems(newItems);
-  };
-
-  // 更新数量
-  const updateQuantity = (id: string, delta: number) => {
-    const newItems = items.map(item => {
-      if (item.id === id) {
-        return { ...item, quantity: Math.max(0, item.quantity + delta) };
-      }
-      return item;
+    setFormData({
+      name: '',
+      spaceId: selectedSpace?.id || spaces[0]?.id || '',
+      categoryId: categories[0]?.id || '',
+      quantity: 1,
+      unit: '个',
+      price: undefined,
+      currency: 'CNY',
+      tags: [],
+      status: 'normal',
+      note: '',
+      brand: '',
+      model: '',
+      purchaseDate: '',
+      expiryDate: '',
+      images: [],
     });
-    saveItems(newItems);
   };
 
-  // 获取分类统计
-  const getCategoryCount = (category: string) => {
-    if (category === '全部') return items.length;
-    return items.filter(item => item.category === category).length;
+  // 编辑物品
+  const handleEditItem = (item: StorageItem) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      spaceId: item.spaceId,
+      categoryId: item.categoryId,
+      quantity: item.quantity,
+      unit: item.unit,
+      price: item.price,
+      currency: item.currency,
+      tags: item.tags,
+      status: item.status,
+      note: item.note,
+      brand: item.brand,
+      model: item.model,
+      purchaseDate: item.purchaseDate,
+      expiryDate: item.expiryDate,
+      images: item.images,
+    });
+    setShowItemDetail(null);
+    setShowAddModal(true);
   };
 
-  // 过滤物品
-  const filteredItems = selectedCategory === '全部' 
-    ? items 
-    : items.filter(item => item.category === selectedCategory);
+  // 选择图片
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
 
-  // 渲染物品项
-  const renderItem = ({ item }: { item: InventoryItem }) => (
-    <View style={styles.itemCard}>
-      <View style={styles.itemHeader}>
-        <View style={styles.itemMain}>
-          <Text style={styles.itemName}>{item.name}</Text>
-          <View style={styles.itemMeta}>
-            <Text style={styles.itemCategory}>{item.category}</Text>
-            <Text style={styles.itemDot}>·</Text>
-            <Text style={styles.itemLocation}>{item.location}</Text>
-          </View>
+    if (!result.canceled && result.assets[0]) {
+      const newImages = [...(formData.images || []), result.assets[0].uri];
+      setFormData({ ...formData, images: newImages });
+    }
+  };
+
+  // 渲染统计卡片
+  const renderStatsCard = () => (
+    <View style={styles.statsCard}>
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{statistics?.totalItems || 0}</Text>
+          <Text style={styles.statLabel}>物品总数</Text>
         </View>
-        <TouchableOpacity 
-          style={styles.deleteButton}
-          onPress={() => deleteItem(item.id)}
-        >
-          <Text style={styles.deleteText}>×</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {item.notes && (
-        <Text style={styles.itemNotes}>{item.notes}</Text>
-      )}
-      
-      <View style={styles.itemFooter}>
-        <View style={styles.quantityControl}>
-          <TouchableOpacity 
-            style={styles.quantityButton}
-            onPress={() => updateQuantity(item.id, -1)}
-          >
-            <Text style={styles.quantityButtonText}>−</Text>
-          </TouchableOpacity>
-          <Text style={styles.quantityText}>{item.quantity}</Text>
-          <TouchableOpacity 
-            style={styles.quantityButton}
-            onPress={() => updateQuantity(item.id, 1)}
-          >
-            <Text style={styles.quantityButtonText}>+</Text>
-          </TouchableOpacity>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>¥{(statistics?.totalValue || 0).toLocaleString()}</Text>
+          <Text style={styles.statLabel}>总价值</Text>
         </View>
-        <Text style={styles.itemDate}>{item.createdAt}</Text>
+        <View style={styles.statItem}>
+          <Text style={styles.statValue}>{statistics?.newThisMonth || 0}</Text>
+          <Text style={styles.statLabel}>本月新增</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={[styles.statValue, statistics?.expiringSoon ? styles.statAlert : null]}>
+            {statistics?.expiringSoon || 0}
+          </Text>
+          <Text style={styles.statLabel}>即将过期</Text>
+        </View>
       </View>
     </View>
   );
+
+  // 渲染空间树
+  const renderSpaceTree = (parentId: string | null = null, level: number = 0) => {
+    const childSpaces = getChildSpaces(parentId);
+    
+    return childSpaces.map(space => {
+      const itemCount = items.filter(i => i.spaceId === space.id).length;
+      const hasChildren = spaces.some(s => s.parentId === space.id);
+      
+      return (
+        <View key={space.id}>
+          <TouchableOpacity
+            style={[styles.spaceItem, { paddingLeft: 20 + level * 20 }]}
+            onPress={() => {
+              setSelectedSpace(space);
+              setCurrentView('space');
+            }}
+            onLongPress={() => handleDeleteSpace(space)}
+          >
+            <View style={styles.spaceIcon}>
+              {React.createElement(getSpaceIconComponent(space.icon || space.name), { size: 24, color: '#000000' })}
+            </View>
+            <View style={styles.spaceInfo}>
+              <Text style={styles.spaceName}>{space.name}</Text>
+              <Text style={styles.spaceCount}>{itemCount} 件物品</Text>
+            </View>
+            <Text style={styles.spaceArrow}>›</Text>
+          </TouchableOpacity>
+          {hasChildren && renderSpaceTree(space.id, level + 1)}
+        </View>
+      );
+    });
+  };
+
+  // 渲染分类快捷入口
+  const renderCategoryShortcuts = () => (
+    <View style={styles.categorySection}>
+      <Text style={styles.sectionTitle}>分类</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.categoryList}>
+          {categories.slice(0, 8).map(category => {
+            const count = items.filter(i => i.categoryId === category.id).length;
+            return (
+              <TouchableOpacity
+                key={category.id}
+                style={styles.categoryChip}
+                onPress={() => {
+                  setSelectedCategory(category);
+                  setCurrentView('category');
+                }}
+              >
+                <View style={styles.categoryIcon}>
+                  {React.createElement(getCategoryIconComponent(category.icon), { size: 24, color: category.color || '#000000' })}
+                </View>
+                <Text style={styles.categoryName}>{category.name}</Text>
+                <Text style={styles.categoryCount}>{count}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </View>
+  );
+
+  // 渲染物品项
+  const renderItem = ({ item }: { item: StorageItem }) => {
+    const category = getCategory(item.categoryId);
+    const space = spaces.find(s => s.id === item.spaceId);
+    const daysUntilExpiry = item.expiryDate ? getDaysUntilExpiry(item.expiryDate) : null;
+    
+    return (
+      <TouchableOpacity
+        style={styles.itemCard}
+        onPress={() => setShowItemDetail(item)}
+      >
+        <View style={styles.itemHeader}>
+          {item.images && item.images.length > 0 ? (
+            <Image source={{ uri: item.images[0] }} style={styles.itemImage} />
+          ) : (
+            <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+              {React.createElement(BoxIcon, { size: 24, color: '#999999' })}
+            </View>
+          )}
+          <View style={styles.itemMain}>
+            <Text style={styles.itemName}>{item.name}</Text>
+            <View style={styles.itemMeta}>
+              <Text style={styles.itemCategory}>{category?.name}</Text>
+              <Text style={styles.itemDot}>·</Text>
+              <Text style={styles.itemLocation}>{space?.name}</Text>
+            </View>
+            {item.price !== undefined && (
+              <Text style={styles.itemPrice}>¥{item.price.toLocaleString()}</Text>
+            )}
+          </View>
+        </View>
+        
+        {daysUntilExpiry !== null && daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && (
+          <View style={styles.expiryWarning}>
+            <Text style={styles.expiryWarningText}>
+              ⚠️ {daysUntilExpiry === 0 ? '今天过期' : `${daysUntilExpiry}天后过期`}
+            </Text>
+          </View>
+        )}
+        
+        {item.tags.length > 0 && (
+          <View style={styles.itemTags}>
+            {item.tags.slice(0, 3).map((tag, index) => (
+              <View key={index} style={styles.tagChip}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  // 渲染首页
+  const renderHome = () => (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      {renderStatsCard()}
+      
+      {/* 空间导航 */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>空间</Text>
+          <TouchableOpacity onPress={() => setShowSpaceModal(true)}>
+            <Text style={styles.sectionAction}>+ 添加</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.spaceList}>
+          {renderSpaceTree()}
+        </View>
+      </View>
+      
+      {renderCategoryShortcuts()}
+      
+      {/* 最近添加 */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>最近添加</Text>
+        <View style={styles.itemsList}>
+          {items.slice(0, 5).map(item => renderItem({ item }))}
+        </View>
+        {items.length === 0 && (
+          <View style={styles.emptyState}>
+            <BoxIcon size={48} color="#CCCCCC" />
+            <Text style={styles.emptyText}>还没有物品</Text>
+            <Text style={styles.emptySubtext}>点击右上角添加</Text>
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+
+  // 渲染空间详情
+  const renderSpaceDetail = () => {
+    if (!selectedSpace) return null;
+    const spaceItems = getDisplayedItems();
+    const childSpaces = getChildSpaces(selectedSpace.id);
+    
+    return (
+      <View style={styles.detailContainer}>
+        <View style={styles.detailHeader}>
+          <TouchableOpacity onPress={() => setCurrentView('home')}>
+            <Text style={styles.backButton}>← 返回</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailTitle}>{selectedSpace.name}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <Text style={styles.breadcrumb}>{getSpacePath(selectedSpace.id)}</Text>
+        
+        {childSpaces.length > 0 && (
+          <View style={styles.childSpacesSection}>
+            <Text style={styles.subSectionTitle}>子空间</Text>
+            <View style={styles.childSpacesGrid}>
+              {childSpaces.map(space => {
+                const count = items.filter(i => i.spaceId === space.id).length;
+                return (
+                  <TouchableOpacity
+                    key={space.id}
+                    style={styles.childSpaceCard}
+                    onPress={() => setSelectedSpace(space)}
+                  >
+                    <View style={styles.childSpaceIcon}>
+                      {React.createElement(getSpaceIconComponent(space.icon || space.name), { size: 20, color: '#000000' })}
+                    </View>
+                    <Text style={styles.childSpaceName}>{space.name}</Text>
+                    <Text style={styles.childSpaceCount}>{count} 件</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+        
+        <View style={styles.detailContent}>
+          <Text style={styles.subSectionTitle}>物品 ({spaceItems.length})</Text>
+          <FlatList
+            data={spaceItems}
+            keyExtractor={item => item.id}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <BoxIcon size={48} color="#CCCCCC" />
+                <Text style={styles.emptyText}>该空间还没有物品</Text>
+              </View>
+            }
+          />
+        </View>
+      </View>
+    );
+  };
+
+  // 渲染分类详情
+  const renderCategoryDetail = () => {
+    if (!selectedCategory) return null;
+    const categoryItems = getDisplayedItems();
+    
+    return (
+      <View style={styles.detailContainer}>
+        <View style={styles.detailHeader}>
+          <TouchableOpacity onPress={() => setCurrentView('home')}>
+            <Text style={styles.backButton}>← 返回</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailTitle}>{selectedCategory.icon} {selectedCategory.name}</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <FlatList
+          data={categoryItems}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <BoxIcon size={48} color="#CCCCCC" />
+              <Text style={styles.emptyText}>该分类还没有物品</Text>
+            </View>
+          }
+        />
+      </View>
+    );
+  };
+
+  // 渲染搜索结果
+  const renderSearchResults = () => {
+    const searchItems = getDisplayedItems();
+    
+    return (
+      <View style={styles.detailContainer}>
+        <View style={styles.detailHeader}>
+          <TouchableOpacity onPress={() => { setCurrentView('home'); setSearchKeyword(''); }}>
+            <Text style={styles.backButton}>← 返回</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailTitle}>搜索结果</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        
+        <Text style={styles.searchResultText}>找到 {searchItems.length} 个物品</Text>
+        
+        <FlatList
+          data={searchItems}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <SearchIcon size={48} color="#CCCCCC" />
+              <Text style={styles.emptyText}>没有找到相关物品</Text>
+            </View>
+          }
+        />
+      </View>
+    );
+  };
+
+  // 渲染统计页面
+  const renderStats = () => (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <View style={styles.detailHeader}>
+        <TouchableOpacity onPress={() => setCurrentView('home')}>
+          <Text style={styles.backButton}>← 返回</Text>
+        </TouchableOpacity>
+        <Text style={styles.detailTitle}>统计</Text>
+        <View style={{ width: 40 }} />
+      </View>
+      
+      {renderStatsCard()}
+      
+      {/* 分类分布 */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>分类分布</Text>
+        {statistics?.categoryDistribution.map(cat => {
+          const category = getCategory(cat.categoryId);
+          if (!category) return null;
+          return (
+            <View key={cat.categoryId} style={styles.distributionItem}>
+              <View style={styles.distributionInfo}>
+                <View style={styles.distributionIcon}>
+                  {React.createElement(getCategoryIconComponent(category.icon), { size: 20, color: category.color || '#000000' })}
+                </View>
+                <Text style={styles.distributionName}>{category.name}</Text>
+              </View>
+              <View style={styles.distributionBar}>
+                <View 
+                  style={[
+                    styles.distributionFill, 
+                    { 
+                      width: `${statistics.totalItems > 0 ? (cat.count / statistics.totalItems) * 100 : 0}%`,
+                      backgroundColor: category.color,
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.distributionCount}>{cat.count}</Text>
+            </View>
+          );
+        })}
+      </View>
+      
+      {/* 空间分布 */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>空间分布</Text>
+        {statistics?.spaceDistribution.map(space => {
+          const spaceData = spaces.find(s => s.id === space.spaceId);
+          if (!spaceData) return null;
+          return (
+            <View key={space.spaceId} style={styles.distributionItem}>
+              <View style={styles.distributionInfo}>
+                <View style={styles.distributionIcon}>
+                  {React.createElement(getSpaceIconComponent(spaceData.icon || spaceData.name), { size: 20, color: '#000000' })}
+                </View>
+                <Text style={styles.distributionName}>{spaceData.name}</Text>
+              </View>
+              <View style={styles.distributionBar}>
+                <View 
+                  style={[
+                    styles.distributionFill, 
+                    { 
+                      width: `${statistics.totalItems > 0 ? (space.count / statistics.totalItems) * 100 : 0}%`,
+                      backgroundColor: Colors.gray[400],
+                    }
+                  ]} 
+                />
+              </View>
+              <Text style={styles.distributionCount}>{space.count}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+
+  // 渲染添加/编辑物品模态框
+  const renderAddModal = () => (
+    <Modal
+      visible={showAddModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => { setShowAddModal(false); setEditingItem(null); resetForm(); }}
+    >
+      <View style={styles.modalOverlay}>
+        <ScrollView style={styles.modalScroll}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{editingItem ? '编辑物品' : '添加物品'}</Text>
+            
+            {/* 图片选择 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>照片</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.imageList}>
+                  {formData.images?.map((uri, index) => (
+                    <View key={index} style={styles.selectedImage}>
+                      <Image source={{ uri }} style={styles.selectedImageThumb} />
+                      <TouchableOpacity
+                        style={styles.removeImageButton}
+                        onPress={() => {
+                          const newImages = formData.images?.filter((_, i) => i !== index);
+                          setFormData({ ...formData, images: newImages });
+                        }}
+                      >
+                        <Text style={styles.removeImageText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+                    <Text style={styles.addImageText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* 名称 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>名称 *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="物品名称"
+                value={formData.name}
+                onChangeText={text => setFormData({ ...formData, name: text })}
+              />
+            </View>
+
+            {/* 空间 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>空间 *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
+                  {spaces.map(space => (
+                    <TouchableOpacity
+                      key={space.id}
+                      style={[
+                        styles.optionChip,
+                        formData.spaceId === space.id && styles.optionChipActive,
+                      ]}
+                      onPress={() => setFormData({ ...formData, spaceId: space.id })}
+                    >
+                      <View style={styles.optionChipIcon}>
+                        {React.createElement(getSpaceIconComponent(space.icon || space.name), { size: 16, color: formData.spaceId === space.id ? '#FFFFFF' : '#000000' })}
+                      </View>
+                      <Text style={[
+                        styles.optionChipText,
+                        formData.spaceId === space.id && styles.optionChipTextActive,
+                      ]}>
+                        {space.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* 分类 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>分类 *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
+                  {categories.map(category => (
+                    <TouchableOpacity
+                      key={category.id}
+                      style={[
+                        styles.optionChip,
+                        formData.categoryId === category.id && styles.optionChipActive,
+                      ]}
+                      onPress={() => setFormData({ ...formData, categoryId: category.id })}
+                    >
+                      <View style={styles.optionChipIcon}>
+                        {React.createElement(getCategoryIconComponent(category.icon), { size: 16, color: formData.categoryId === category.id ? '#FFFFFF' : '#000000' })}
+                      </View>
+                      <Text style={[
+                        styles.optionChipText,
+                        formData.categoryId === category.id && styles.optionChipTextActive,
+                      ]}>
+                        {category.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* 数量和单位 */}
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>数量</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="1"
+                  value={String(formData.quantity || 1)}
+                  onChangeText={text => setFormData({ ...formData, quantity: parseInt(text) || 1 })}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>单位</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="个"
+                  value={formData.unit}
+                  onChangeText={text => setFormData({ ...formData, unit: text })}
+                />
+              </View>
+            </View>
+
+            {/* 品牌 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>品牌</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="品牌（可选）"
+                value={formData.brand}
+                onChangeText={text => setFormData({ ...formData, brand: text })}
+              />
+            </View>
+
+            {/* 价格 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>价格</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="价格（可选）"
+                value={formData.price !== undefined ? String(formData.price) : ''}
+                onChangeText={text => setFormData({ ...formData, price: text ? parseFloat(text) : undefined })}
+                keyboardType="decimal-pad"
+              />
+            </View>
+
+            {/* 保质期 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>保质期</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="YYYY-MM-DD（可选）"
+                value={formData.expiryDate}
+                onChangeText={text => setFormData({ ...formData, expiryDate: text })}
+              />
+            </View>
+
+            {/* 标签 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>标签</Text>
+              <View style={styles.tagSelection}>
+                {tags.map(tag => (
+                  <TouchableOpacity
+                    key={tag.id}
+                    style={[
+                      styles.tagOption,
+                      formData.tags?.includes(tag.name) && styles.tagOptionActive,
+                    ]}
+                    onPress={() => {
+                      const currentTags = formData.tags || [];
+                      const newTags = currentTags.includes(tag.name)
+                        ? currentTags.filter(t => t !== tag.name)
+                        : [...currentTags, tag.name];
+                      setFormData({ ...formData, tags: newTags });
+                    }}
+                  >
+                    <Text style={[
+                      styles.tagOptionText,
+                      formData.tags?.includes(tag.name) && styles.tagOptionTextActive,
+                    ]}>
+                      {tag.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* 备注 */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>备注</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                placeholder="备注（可选）"
+                value={formData.note}
+                onChangeText={text => setFormData({ ...formData, note: text })}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => { setShowAddModal(false); setEditingItem(null); resetForm(); }}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveItem}>
+                <Text style={styles.modalButtonConfirmText}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+
+  // 渲染添加空间模态框
+  const renderSpaceModal = () => (
+    <Modal
+      visible={showSpaceModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowSpaceModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>添加空间</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>名称 *</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="空间名称"
+              value={spaceForm.name}
+              onChangeText={text => setSpaceForm({ ...spaceForm, name: text })}
+              autoFocus
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>父级空间</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.optionList}>
+                <TouchableOpacity
+                  style={[
+                    styles.optionChip,
+                    spaceForm.parentId === null && styles.optionChipActive,
+                  ]}
+                  onPress={() => setSpaceForm({ ...spaceForm, parentId: null })}
+                >
+                  <Text style={[
+                    styles.optionChipText,
+                    spaceForm.parentId === null && styles.optionChipTextActive,
+                  ]}>
+                    🏠 根目录
+                  </Text>
+                </TouchableOpacity>
+                {spaces.map(space => (
+                  <TouchableOpacity
+                    key={space.id}
+                    style={[
+                      styles.optionChip,
+                      spaceForm.parentId === space.id && styles.optionChipActive,
+                    ]}
+                    onPress={() => setSpaceForm({ ...spaceForm, parentId: space.id })}
+                  >
+                    <Text style={[
+                      styles.optionChipText,
+                      spaceForm.parentId === space.id && styles.optionChipTextActive,
+                    ]}>
+                      {space.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>备注</Text>
+            <TextInput
+              style={[styles.modalInput, styles.modalInputMultiline]}
+              placeholder="备注（可选）"
+              value={spaceForm.note}
+              onChangeText={text => setSpaceForm({ ...spaceForm, note: text })}
+              multiline
+              numberOfLines={2}
+            />
+          </View>
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.modalButtonCancel}
+              onPress={() => setShowSpaceModal(false)}
+            >
+              <Text style={styles.modalButtonCancelText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleCreateSpace}>
+              <Text style={styles.modalButtonConfirmText}>添加</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // 渲染物品详情模态框
+  const renderItemDetailModal = () => {
+    if (!showItemDetail) return null;
+    const category = getCategory(showItemDetail.categoryId);
+    const space = spaces.find(s => s.id === showItemDetail.spaceId);
+    const daysUntilExpiry = showItemDetail.expiryDate ? getDaysUntilExpiry(showItemDetail.expiryDate) : null;
+    
+    return (
+      <Modal
+        visible={!!showItemDetail}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowItemDetail(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView style={styles.modalScroll}>
+            <View style={styles.modalContent}>
+              <View style={styles.detailModalHeader}>
+                <TouchableOpacity onPress={() => setShowItemDetail(null)}>
+                  <Text style={styles.backButton}>← 返回</Text>
+                </TouchableOpacity>
+                <View style={styles.detailModalActions}>
+                  <TouchableOpacity onPress={() => handleEditItem(showItemDetail)}>
+                    <Text style={styles.actionButton}>编辑</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteItem(showItemDetail)}>
+                    <Text style={[styles.actionButton, styles.actionButtonDanger]}>删除</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* 图片轮播 */}
+              {showItemDetail.images && showItemDetail.images.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.detailImageScroll}>
+                  {showItemDetail.images.map((uri, index) => (
+                    <Image key={index} source={{ uri }} style={styles.detailImage} />
+                  ))}
+                </ScrollView>
+              )}
+
+              <Text style={styles.detailItemName}>{showItemDetail.name}</Text>
+              
+              <View style={styles.detailItemMeta}>
+                <Text style={styles.detailItemCategory}>{category?.name}</Text>
+                <Text style={styles.detailItemDot}>·</Text>
+                <View style={styles.detailItemSpace}>
+                  {React.createElement(getSpaceIconComponent(space?.icon || space?.name || ''), { size: 16, color: '#000000' })}
+                  <Text style={styles.detailItemSpaceText}>{space?.name}</Text>
+                </View>
+              </View>
+
+              {daysUntilExpiry !== null && (
+                <View style={[
+                  styles.expiryBadge,
+                  daysUntilExpiry <= 0 ? styles.expiryBadgeExpired : 
+                  daysUntilExpiry <= 7 ? styles.expiryBadgeWarning : styles.expiryBadgeNormal
+                ]}>
+                  <Text style={styles.expiryBadgeText}>
+                    {daysUntilExpiry < 0 ? `已过期 ${Math.abs(daysUntilExpiry)} 天` :
+                     daysUntilExpiry === 0 ? '今天过期' :
+                     `还有 ${daysUntilExpiry} 天过期`}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.detailInfoSection}>
+                <Text style={styles.detailSectionTitle}>基本信息</Text>
+                <View style={styles.detailInfoGrid}>
+                  <View style={styles.detailInfoItem}>
+                    <Text style={styles.detailInfoLabel}>数量</Text>
+                    <Text style={styles.detailInfoValue}>{showItemDetail.quantity} {showItemDetail.unit || '个'}</Text>
+                  </View>
+                  {showItemDetail.brand && (
+                    <View style={styles.detailInfoItem}>
+                      <Text style={styles.detailInfoLabel}>品牌</Text>
+                      <Text style={styles.detailInfoValue}>{showItemDetail.brand}</Text>
+                    </View>
+                  )}
+                  {showItemDetail.model && (
+                    <View style={styles.detailInfoItem}>
+                      <Text style={styles.detailInfoLabel}>型号</Text>
+                      <Text style={styles.detailInfoValue}>{showItemDetail.model}</Text>
+                    </View>
+                  )}
+                  {showItemDetail.price !== undefined && (
+                    <View style={styles.detailInfoItem}>
+                      <Text style={styles.detailInfoLabel}>价格</Text>
+                      <Text style={styles.detailInfoValue}>¥{showItemDetail.price.toLocaleString()}</Text>
+                    </View>
+                  )}
+                  {showItemDetail.purchaseDate && (
+                    <View style={styles.detailInfoItem}>
+                      <Text style={styles.detailInfoLabel}>购买日期</Text>
+                      <Text style={styles.detailInfoValue}>{formatDate(showItemDetail.purchaseDate)}</Text>
+                    </View>
+                  )}
+                  {showItemDetail.expiryDate && (
+                    <View style={styles.detailInfoItem}>
+                      <Text style={styles.detailInfoLabel}>保质期</Text>
+                      <Text style={styles.detailInfoValue}>{formatDate(showItemDetail.expiryDate)}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {showItemDetail.tags.length > 0 && (
+                <View style={styles.detailInfoSection}>
+                  <Text style={styles.detailSectionTitle}>标签</Text>
+                  <View style={styles.detailTags}>
+                    {showItemDetail.tags.map((tag, index) => (
+                      <View key={index} style={styles.detailTag}>
+                        <Text style={styles.detailTagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {showItemDetail.note && (
+                <View style={styles.detailInfoSection}>
+                  <Text style={styles.detailSectionTitle}>备注</Text>
+                  <Text style={styles.detailNote}>{showItemDetail.note}</Text>
+                </View>
+              )}
+
+              <View style={styles.detailInfoSection}>
+                <Text style={styles.detailInfoLabel}>添加时间</Text>
+                <Text style={styles.detailInfoValue}>{formatDate(showItemDetail.createdAt)}</Text>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -157,165 +1224,83 @@ export default function InventoryScreen() {
       
       {/* 头部 */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>收纳</Text>
-          <Text style={styles.headerSubtitle}>管理你的物品</Text>
+        <View style={styles.headerLeft}>
+          {currentView === 'home' ? (
+            <>
+              <Text style={styles.headerTitle}>收纳</Text>
+              <Text style={styles.headerSubtitle}>管理你的物品</Text>
+            </>
+          ) : (
+            <TouchableOpacity onPress={() => setCurrentView('home')}>
+              <Text style={styles.backButton}>← 返回</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
-          <Text style={styles.addButtonText}>+</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* 分类筛选 */}
-      <View style={styles.categorySection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.categoryList}>
-            {['全部', ...CATEGORIES].map(category => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === category && styles.categoryChipActive,
-                ]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text style={[
-                  styles.categoryText,
-                  selectedCategory === category && styles.categoryTextActive,
-                ]}>
-                  {category} ({getCategoryCount(category)})
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
-
-      {/* 统计 */}
-      <View style={styles.statsBar}>
-        <Text style={styles.statsText}>
-          共 {filteredItems.length} 件物品
-        </Text>
-      </View>
-
-      {/* 物品列表 */}
-      <FlatList
-        data={filteredItems}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📦</Text>
-            <Text style={styles.emptyText}>还没有物品</Text>
-            <Text style={styles.emptySubtext}>点击右上角添加</Text>
-          </View>
-        }
-      />
-
-      {/* 添加模态框 */}
-      <Modal
-        visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <ScrollView style={styles.modalScroll}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>添加物品</Text>
-              
-              {/* 名称 */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>名称</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="物品名称"
-                  value={newItemName}
-                  onChangeText={setNewItemName}
-                  autoFocus
-                />
-              </View>
-
-              {/* 分类 */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>分类</Text>
-                <View style={styles.categoryGrid}>
-                  {CATEGORIES.map(cat => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[
-                        styles.categoryOption,
-                        newItemCategory === cat && styles.categoryOptionActive,
-                      ]}
-                      onPress={() => setNewItemCategory(cat)}
-                    >
-                      <Text style={[
-                        styles.categoryOptionText,
-                        newItemCategory === cat && styles.categoryOptionTextActive,
-                      ]}>
-                        {cat}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* 位置 */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>位置</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="存放位置"
-                  value={newItemLocation}
-                  onChangeText={setNewItemLocation}
-                />
-              </View>
-
-              {/* 数量 */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>数量</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="数量"
-                  value={newItemQuantity}
-                  onChangeText={setNewItemQuantity}
-                  keyboardType="number-pad"
-                />
-              </View>
-
-              {/* 备注 */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>备注</Text>
-                <TextInput
-                  style={[styles.modalInput, styles.modalInputMultiline]}
-                  placeholder="备注信息（可选）"
-                  value={newItemNotes}
-                  onChangeText={setNewItemNotes}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={styles.modalButtonCancel}
-                  onPress={() => setShowAddModal(false)}
-                >
-                  <Text style={styles.modalButtonCancelText}>取消</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.modalButtonConfirm}
-                  onPress={addItem}
-                >
-                  <Text style={styles.modalButtonConfirmText}>添加</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
+        
+        <View style={styles.headerActions}>
+          {/* 搜索按钮 */}
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => {
+              if (currentView === 'search') {
+                setCurrentView('home');
+                setSearchKeyword('');
+              } else {
+                setCurrentView('search');
+              }
+            }}
+          >
+            {React.createElement(currentView === 'search' ? CloseIcon : SearchIcon, { size: 20, color: '#000000' })}
+          </TouchableOpacity>
+          
+          {/* 统计按钮 */}
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => setCurrentView(currentView === 'stats' ? 'home' : 'stats')}
+          >
+            {React.createElement(currentView === 'stats' ? CloseIcon : ChartIcon, { size: 20, color: '#000000' })}
+          </TouchableOpacity>
+          
+          {/* 添加按钮 */}
+          <TouchableOpacity 
+            style={styles.addButton}
+            onPress={() => {
+              resetForm();
+              setEditingItem(null);
+              setShowAddModal(true);
+            }}
+          >
+            <Text style={styles.addButtonText}>+</Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </View>
+
+      {/* 搜索栏 */}
+      {currentView === 'search' && (
+        <View style={styles.searchBar}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="搜索物品名称、品牌..."
+            value={searchKeyword}
+            onChangeText={setSearchKeyword}
+            autoFocus
+          />
+        </View>
+      )}
+
+      {/* 主内容 */}
+      <View style={styles.content}>
+        {currentView === 'home' && renderHome()}
+        {currentView === 'space' && renderSpaceDetail()}
+        {currentView === 'category' && renderCategoryDetail()}
+        {currentView === 'search' && renderSearchResults()}
+        {currentView === 'stats' && renderStats()}
+      </View>
+
+      {/* 模态框 */}
+      {renderAddModal()}
+      {renderSpaceModal()}
+      {renderItemDetailModal()}
     </SafeAreaView>
   );
 }
@@ -333,6 +1318,9 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
   },
+  headerLeft: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 32,
     fontWeight: '600',
@@ -343,6 +1331,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textMuted,
     marginTop: 4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: Colors.gray[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerButtonText: {
+    fontSize: 18,
   },
   addButton: {
     width: 44,
@@ -358,56 +1362,173 @@ const styles = StyleSheet.create({
     fontWeight: '300',
     lineHeight: 30,
   },
-  categorySection: {
+  searchBar: {
     paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  searchInput: {
+    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+  },
+  content: {
+    flex: 1,
+  },
+  
+  // 统计卡片
+  statsCard: {
+    margin: 20,
+    marginTop: 0,
+    padding: 16,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  statAlert: {
+    color: Colors.error,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  
+  // 区块
+  section: {
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  sectionAction: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '500',
+  },
+  
+  // 空间列表
+  spaceList: {
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  spaceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingRight: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  spaceIcon: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  spaceInfo: {
+    flex: 1,
+  },
+  spaceName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text,
+  },
+  spaceCount: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  spaceArrow: {
+    fontSize: 18,
+    color: Colors.textMuted,
+  },
+  
+  // 分类
+  categorySection: {
+    marginBottom: 24,
   },
   categoryList: {
     flexDirection: 'row',
-    gap: 8,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   categoryChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    alignItems: 'center',
     backgroundColor: Colors.gray[50],
-    borderWidth: 1,
-    borderColor: Colors.border,
+    borderRadius: 12,
+    minWidth: 70,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
-  categoryChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+  categoryIcon: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  categoryText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
+  categoryName: {
+    fontSize: 12,
+    color: Colors.text,
+    fontWeight: '500',
   },
-  categoryTextActive: {
-    color: Colors.background,
-  },
-  statsBar: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  statsText: {
-    fontSize: 13,
+  categoryCount: {
+    fontSize: 11,
     color: Colors.textMuted,
+    marginTop: 2,
   },
-  listContent: {
-    padding: 20,
-    paddingTop: 8,
+  
+  // 物品列表
+  itemsList: {
+    gap: 12,
   },
   itemCard: {
     backgroundColor: Colors.gray[50],
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
   },
   itemHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'center',
+  },
+  itemImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    marginRight: 12,
+  },
+  itemImagePlaceholder: {
+    backgroundColor: Colors.gray[100],
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemImagePlaceholderText: {
+    fontSize: 24,
   },
   itemMain: {
     flex: 1,
@@ -435,67 +1556,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  deleteButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.gray[100],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  deleteText: {
-    fontSize: 18,
-    color: Colors.textMuted,
-    lineHeight: 20,
-  },
-  itemNotes: {
+  itemPrice: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    lineHeight: 18,
+    color: Colors.primary,
+    fontWeight: '500',
+    marginTop: 4,
   },
-  itemFooter: {
+  itemTags: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
   },
-  quantityControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  quantityButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  tagChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     backgroundColor: Colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
+    borderRadius: 6,
   },
-  quantityButtonText: {
-    fontSize: 16,
-    color: Colors.text,
+  tagText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  expiryWarning: {
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  expiryWarningText: {
+    fontSize: 12,
+    color: '#D97706',
     fontWeight: '500',
   },
-  quantityText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-    minWidth: 24,
-    textAlign: 'center',
-  },
-  itemDate: {
-    fontSize: 12,
-    color: Colors.textMuted,
-  },
+  
+  // 空状态
   emptyState: {
     alignItems: 'center',
-    paddingTop: 100,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   emptyIcon: {
     fontSize: 48,
@@ -511,6 +1612,124 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textMuted,
   },
+  
+  // 详情页
+  detailContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  detailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  backButton: {
+    fontSize: 16,
+    color: Colors.primary,
+    fontWeight: '500',
+  },
+  detailTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  breadcrumb: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    marginBottom: 16,
+  },
+  detailContent: {
+    flex: 1,
+  },
+  subSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  childSpacesSection: {
+    marginBottom: 20,
+  },
+  childSpacesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  childSpaceCard: {
+    width: '31%',
+    aspectRatio: 1,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+  },
+  childSpaceIcon: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  childSpaceName: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  childSpaceCount: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  searchResultText: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginBottom: 16,
+  },
+  
+  // 分布统计
+  distributionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  distributionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 80,
+  },
+  distributionIcon: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  distributionName: {
+    fontSize: 13,
+    color: Colors.text,
+  },
+  distributionBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: Colors.gray[100],
+    borderRadius: 4,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+  },
+  distributionFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  distributionCount: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    width: 30,
+    textAlign: 'right',
+  },
+  
   // 模态框
   modalOverlay: {
     flex: 1,
@@ -526,14 +1745,20 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 40,
     marginTop: 60,
+    minHeight: 600,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: '600',
     marginBottom: 24,
+    color: Colors.text,
   },
   inputGroup: {
     marginBottom: 20,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
   inputLabel: {
     fontSize: 14,
@@ -547,41 +1772,119 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
+    color: Colors.text,
   },
   modalInputMultiline: {
     height: 80,
     textAlignVertical: 'top',
     paddingTop: 12,
   },
-  categoryGrid: {
+  optionList: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  optionChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: Colors.gray[50],
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  optionChipIcon: {
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  optionChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  optionChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  optionChipTextActive: {
+    color: Colors.background,
+  },
+  tagSelection: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
-  categoryOption: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
+  tagOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
     backgroundColor: Colors.gray[50],
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  categoryOptionActive: {
+  tagOptionActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-  categoryOptionText: {
+  tagOptionText: {
     fontSize: 13,
     color: Colors.textSecondary,
   },
-  categoryOptionTextActive: {
+  tagOptionTextActive: {
     color: Colors.background,
+  },
+  imageList: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  selectedImage: {
+    position: 'relative',
+  },
+  selectedImageThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: Colors.background,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  addImageButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: Colors.gray[50],
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageText: {
+    fontSize: 32,
+    color: Colors.textMuted,
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 16,
-    marginTop: 8,
+    marginTop: 24,
   },
   modalButtonCancel: {
     paddingVertical: 12,
@@ -601,5 +1904,131 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.background,
     fontWeight: '500',
+  },
+  
+  // 详情模态框
+  detailModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  detailModalActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  actionButton: {
+    fontSize: 15,
+    color: Colors.primary,
+    fontWeight: '500',
+  },
+  actionButtonDanger: {
+    color: Colors.error,
+  },
+  detailImageScroll: {
+    marginHorizontal: -24,
+    marginBottom: 20,
+  },
+  detailImage: {
+    width: 280,
+    height: 200,
+    borderRadius: 16,
+    marginLeft: 24,
+  },
+  detailItemName: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  detailItemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  detailItemCategory: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  detailItemDot: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginHorizontal: 8,
+  },
+  detailItemSpace: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  detailItemSpaceText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  expiryBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  expiryBadgeExpired: {
+    backgroundColor: '#FEE2E2',
+  },
+  expiryBadgeWarning: {
+    backgroundColor: '#FEF3C7',
+  },
+  expiryBadgeNormal: {
+    backgroundColor: '#D1FAE5',
+  },
+  expiryBadgeText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  detailInfoSection: {
+    marginBottom: 24,
+  },
+  detailSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 12,
+  },
+  detailInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  detailInfoItem: {
+    width: '45%',
+  },
+  detailInfoLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginBottom: 4,
+  },
+  detailInfoValue: {
+    fontSize: 15,
+    color: Colors.text,
+    fontWeight: '500',
+  },
+  detailTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  detailTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: Colors.gray[100],
+    borderRadius: 6,
+  },
+  detailTagText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  detailNote: {
+    fontSize: 15,
+    color: Colors.text,
+    lineHeight: 22,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
 import { Habit, HabitLog, HabitStats } from '../types';
 import { Colors } from '../constants/colors';
 import { habitStorage, habitLogStorage } from '../utils/storage';
@@ -166,7 +167,7 @@ const HEATMAP_COLORS = {
   4: '#000000',
 };
 
-type TabType = 'overview' | 'habits' | 'insights';
+type TabType = 'overview' | 'habits' | 'insights' | 'archived';
 type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'custom';
 
 // ==================== 主组件 ====================
@@ -188,11 +189,26 @@ export default function HabitScreen() {
   const [habitIcon, setHabitIcon] = useState(HABIT_ICONS[0].name);
   const [habitCategory, setHabitCategory] = useState('other');
   const [habitFrequency, setHabitFrequency] = useState<FrequencyType>('daily');
+  const [habitFrequencyInterval, setHabitFrequencyInterval] = useState<number>(2);
   const [habitTarget, setHabitTarget] = useState<'streak' | 'count' | 'none'>('streak');
+  const [habitTargetValue, setHabitTargetValue] = useState<number>(21);
+  const [habitDeadline, setHabitDeadline] = useState<string>('');
 
   // 习惯详情弹窗状态
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedHabit, setSelectedHabit] = useState<Habit | null>(null);
+
+  // 补卡弹窗状态
+  const [showMakeupModal, setShowMakeupModal] = useState(false);
+  const [makeupDate, setMakeupDate] = useState<string>('');
+  const [makeupNote, setMakeupNote] = useState<string>('');
+
+
+
+  // 拖拽排序状态
+  const [draggingHabitId, setDraggingHabitId] = useState<string | null>(null);
+  const [dragY, setDragY] = useState<number>(0);
+  const dragAnimatedValue = useRef(new Animated.Value(0)).current;
 
   const loadData = async () => {
     const [habitsData, logsData] = await Promise.all([
@@ -315,6 +331,7 @@ export default function HabitScreen() {
   };
 
   const isHabitDueOnDate = (habit: Habit, date: Date): boolean => {
+    if (!habit || !habit.frequency) return true;
     const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay();
     const dayOfMonth = date.getDate();
     const { type, days, interval } = habit.frequency;
@@ -336,6 +353,7 @@ export default function HabitScreen() {
   };
 
   const formatFrequency = (habit: Habit): string => {
+    if (!habit || !habit.frequency) return '每天';
     const { type, days, interval } = habit.frequency;
     
     switch (type) {
@@ -366,9 +384,12 @@ export default function HabitScreen() {
     const today = new Date();
     const todayStr = getTodayString();
 
+    // 只统计活跃习惯（未归档、未暂停）
+    const activeHabits = habits.filter(h => !h.archived && !h.paused);
+
     // 今日统计
-    const todayCompleted = habits.filter(h => isCompletedToday(h.id)).length;
-    const todayPending = habits.filter(h => isHabitDueOnDate(h, today)).length;
+    const todayCompleted = activeHabits.filter(h => isCompletedToday(h.id)).length;
+    const todayPending = activeHabits.filter(h => isHabitDueOnDate(h, today)).length;
     const todayRate = todayPending > 0 ? Math.round((todayCompleted / todayPending) * 100) : 0;
 
     // 本周统计
@@ -382,7 +403,7 @@ export default function HabitScreen() {
       const dateStr = date.toISOString().split('T')[0];
       const dayLogs = habitLogs.filter(l => l.date === dateStr && l.completed);
       weekCompleted += dayLogs.length;
-      weekTarget += habits.filter(h => isHabitDueOnDate(h, date)).length;
+      weekTarget += activeHabits.filter(h => isHabitDueOnDate(h, date)).length;
     }
     const weekRate = weekTarget > 0 ? Math.round((weekCompleted / weekTarget) * 100) : 0;
 
@@ -394,7 +415,7 @@ export default function HabitScreen() {
       const dateStr = d.toISOString().split('T')[0];
       const dayLogs = habitLogs.filter(l => l.date === dateStr && l.completed);
       monthCompleted += dayLogs.length;
-      monthTarget += habits.filter(h => isHabitDueOnDate(h, d)).length;
+      monthTarget += activeHabits.filter(h => isHabitDueOnDate(h, d)).length;
     }
     const monthRate = monthTarget > 0 ? Math.round((monthCompleted / monthTarget) * 100) : 0;
 
@@ -402,13 +423,13 @@ export default function HabitScreen() {
     const totalCompletions = habitLogs.filter(l => l.completed).length;
 
     // 平均连续天数
-    const allStreaks = habits.map(h => getHabitStats(h).currentStreak);
-    const avgStreak = allStreaks.length > 0 
+    const allStreaks = activeHabits.map(h => getHabitStats(h).currentStreak);
+    const avgStreak = allStreaks.length > 0
       ? Math.round(allStreaks.reduce((a, b) => a + b, 0) / allStreaks.length)
       : 0;
 
     // 最长连续
-    const maxStreak = Math.max(0, ...habits.map(h => getHabitStats(h).longestStreak));
+    const maxStreak = Math.max(0, ...activeHabits.map(h => getHabitStats(h).longestStreak));
 
     return {
       todayCompleted,
@@ -457,43 +478,122 @@ export default function HabitScreen() {
 
   // ==================== 操作函数 ====================
 
-  const toggleHabit = async (habitId: string) => {
+  // 根据打卡次数和目标获取颜色深浅
+  const getCheckinColor = (count: number, target: number): string => {
+    if (count === 0) return '#F3F4F6'; // 未打卡 - 浅灰背景
+    const ratio = count / target;
+    if (ratio <= 0.25) return '#D1D5DB'; // 1-25% - 浅灰
+    if (ratio <= 0.5) return '#9CA3AF';  // 26-50% - 中浅灰
+    if (ratio <= 0.75) return '#6B7280'; // 51-75% - 中灰
+    return '#000000'; // 76-100%+ - 黑色
+  };
+
+  // 点击打卡 - 累加次数
+  const handleCheckin = async (habit: Habit) => {
     // 触发动画
-    if (!checkAnimations[habitId]) {
-      checkAnimations[habitId] = new Animated.Value(1);
+    if (!checkAnimations[habit.id]) {
+      checkAnimations[habit.id] = new Animated.Value(1);
     }
     
     Animated.sequence([
-      Animated.timing(checkAnimations[habitId], {
-        toValue: 0.8,
-        duration: 100,
+      Animated.timing(checkAnimations[habit.id], {
+        toValue: 0.85,
+        duration: 80,
         useNativeDriver: true,
       }),
-      Animated.timing(checkAnimations[habitId], {
+      Animated.timing(checkAnimations[habit.id], {
         toValue: 1,
-        duration: 100,
+        duration: 80,
         useNativeDriver: true,
       }),
     ]).start();
 
     const today = getTodayString();
-    const existingLog = habitLogs.find(l => l.habitId === habitId && l.date === today);
+    const targetValue = habit.target?.value || 1;
+    const existingLog = habitLogs.find(l => l.habitId === habit.id && l.date === today);
 
     if (existingLog) {
-      const newLogs = habitLogs.filter(l => !(l.habitId === habitId && l.date === today));
+      // 累加打卡次数
+      const newLogs = habitLogs.map(l =>
+        l.id === existingLog.id
+          ? { ...l, count: l.count + 1, completed: true }
+          : l
+      );
       await saveHabitLogs(newLogs);
     } else {
       const newLog: HabitLog = {
         id: generateId(),
-        habitId,
+        habitId: habit.id,
         date: today,
         completed: true,
         count: 1,
         isMakeup: false,
-        createdAt: today,
+        createdAt: new Date().toISOString(),
       };
       await saveHabitLogs([...habitLogs, newLog]);
     }
+  };
+
+  // 长按菜单
+  const showCheckinMenu = (habit: Habit) => {
+    const today = getTodayString();
+    const existingLog = habitLogs.find(l => l.habitId === habit.id && l.date === today);
+    const currentCount = existingLog?.count || 0;
+
+    const options: Array<{ text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }> = [
+      { text: '取消', style: 'cancel' },
+    ];
+
+    if (currentCount > 0) {
+      options.unshift({
+        text: '减1次',
+        onPress: async () => {
+          if (existingLog) {
+            if (existingLog.count <= 1) {
+              // 如果只剩1次，删除记录
+              const newLogs = habitLogs.filter(l => l.id !== existingLog.id);
+              await saveHabitLogs(newLogs);
+            } else {
+              // 否则减1
+              const newLogs = habitLogs.map(l =>
+                l.id === existingLog.id
+                  ? { ...l, count: l.count - 1 }
+                  : l
+              );
+              await saveHabitLogs(newLogs);
+            }
+          }
+        },
+      });
+      options.unshift({
+        text: '归零',
+        style: 'destructive',
+        onPress: async () => {
+          if (existingLog) {
+            const newLogs = habitLogs.filter(l => l.id !== existingLog.id);
+            await saveHabitLogs(newLogs);
+          }
+        },
+      });
+    }
+
+    options.unshift({
+      text: '补卡',
+      onPress: () => openMakeupModal(habit),
+    });
+
+    Alert.alert(
+      habit.name,
+      currentCount > 0 ? `今日已打卡 ${currentCount} 次` : '今日未打卡',
+      options
+    );
+  };
+
+  // 获取今日打卡次数
+  const getTodayCheckinCount = (habitId: string): number => {
+    const today = getTodayString();
+    const log = habitLogs.find(l => l.habitId === habitId && l.date === today);
+    return log?.count || 0;
   };
 
   const openAddModal = () => {
@@ -503,7 +603,10 @@ export default function HabitScreen() {
     setHabitIcon(HABIT_ICONS[0].name);
     setHabitCategory('other');
     setHabitFrequency('daily');
+    setHabitFrequencyInterval(2);
     setHabitTarget('streak');
+    setHabitTargetValue(21);
+    setHabitDeadline('');
     setShowModal(true);
   };
 
@@ -513,8 +616,11 @@ export default function HabitScreen() {
     setHabitColor(habit.color);
     setHabitIcon(habit.icon);
     setHabitCategory(habit.category);
-    setHabitFrequency(habit.frequency.type);
-    setHabitTarget(habit.target.type);
+    setHabitFrequency(habit.frequency?.type || 'daily');
+    setHabitFrequencyInterval(habit.frequency?.interval || 2);
+    setHabitTarget(habit.target?.type || 'streak');
+    setHabitTargetValue(habit.target?.value || 21);
+    setHabitDeadline(habit.target?.deadline || '');
     setShowModal(true);
   };
 
@@ -524,18 +630,32 @@ export default function HabitScreen() {
       return;
     }
 
+    const frequencyConfig = {
+      type: habitFrequency,
+      days: habitFrequency === 'daily' ? [1, 2, 3, 4, 5, 6, 7] :
+            habitFrequency === 'weekly' ? [1, 2, 3, 4, 5] :
+            habitFrequency === 'monthly' ? [1, 15] : undefined,
+      interval: habitFrequency === 'custom' ? habitFrequencyInterval : undefined,
+    };
+
+    const targetConfig = {
+      type: habitTarget,
+      value: habitTarget !== 'none' ? habitTargetValue : undefined,
+      deadline: habitDeadline || undefined,
+    };
+
     if (editingHabit) {
       // 编辑现有习惯
-      const updatedHabits = habits.map(h => 
-        h.id === editingHabit.id 
-          ? { 
-              ...h, 
+      const updatedHabits = habits.map(h =>
+        h.id === editingHabit.id
+          ? {
+              ...h,
               name: habitName.trim(),
               color: habitColor,
               icon: habitIcon,
               category: habitCategory,
-              frequency: { ...h.frequency, type: habitFrequency },
-              target: { ...h.target, type: habitTarget },
+              frequency: frequencyConfig,
+              target: targetConfig,
             }
           : h
       );
@@ -550,12 +670,8 @@ export default function HabitScreen() {
         icon: habitIcon,
         category: habitCategory,
         tags: [],
-        frequency: { 
-          type: habitFrequency,
-          days: habitFrequency === 'daily' ? [1, 2, 3, 4, 5, 6, 7] : 
-                habitFrequency === 'weekly' ? [1, 2, 3, 4, 5] : undefined,
-        },
-        target: { type: habitTarget },
+        frequency: frequencyConfig,
+        target: targetConfig,
         reminders: [],
         createdAt: new Date().toISOString(),
         archived: false,
@@ -574,8 +690,8 @@ export default function HabitScreen() {
       `确定要删除「${habit.name}」吗？所有相关记录也将被删除。`,
       [
         { text: '取消', style: 'cancel' },
-        { 
-          text: '删除', 
+        {
+          text: '删除',
           style: 'destructive',
           onPress: async () => {
             const newHabits = habits.filter(h => h.id !== habit.id);
@@ -588,16 +704,119 @@ export default function HabitScreen() {
     );
   };
 
+  const togglePauseHabit = async (habit: Habit) => {
+    const updatedHabits = habits.map(h =>
+      h.id === habit.id
+        ? { ...h, paused: !h.paused }
+        : h
+    );
+    await saveHabits(updatedHabits);
+    // 更新选中的习惯状态
+    setSelectedHabit({ ...habit, paused: !habit.paused });
+  };
+
+  const toggleArchiveHabit = async (habit: Habit) => {
+    const updatedHabits = habits.map(h =>
+      h.id === habit.id
+        ? { ...h, archived: !h.archived }
+        : h
+    );
+    await saveHabits(updatedHabits);
+    // 更新选中的习惯状态
+    setSelectedHabit({ ...habit, archived: !habit.archived });
+  };
+
   const openHabitDetail = (habit: Habit) => {
     setSelectedHabit(habit);
     setShowDetailModal(true);
   };
 
+  // ==================== 补卡功能 ====================
+
+  const openMakeupModal = (habit: Habit) => {
+    setSelectedHabit(habit);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    setMakeupDate(yesterday.toISOString().split('T')[0]);
+    setMakeupNote('');
+    setShowMakeupModal(true);
+  };
+
+  const saveMakeup = async () => {
+    if (!selectedHabit || !makeupDate) {
+      Alert.alert('提示', '请选择补卡日期');
+      return;
+    }
+
+    // 检查日期是否在7天内
+    const selectedDate = new Date(makeupDate);
+    const today = new Date();
+    const diffTime = today.getTime() - selectedDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays > 7) {
+      Alert.alert('提示', '只能补打7天内的记录');
+      return;
+    }
+
+    if (diffDays < 0) {
+      Alert.alert('提示', '不能补打未来日期的记录');
+      return;
+    }
+
+    // 检查是否已打卡
+    const existingLog = habitLogs.find(l => l.habitId === selectedHabit.id && l.date === makeupDate);
+    if (existingLog?.completed) {
+      Alert.alert('提示', '该日期已打卡');
+      return;
+    }
+
+    const newLog: HabitLog = {
+      id: generateId(),
+      habitId: selectedHabit.id,
+      date: makeupDate,
+      completed: true,
+      count: 1,
+      note: makeupNote || undefined,
+      isMakeup: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newLogs = existingLog
+      ? habitLogs.map(l => l.id === existingLog.id ? newLog : l)
+      : [...habitLogs, newLog];
+
+    await saveHabitLogs(newLogs);
+    setShowMakeupModal(false);
+    Alert.alert('成功', '补卡成功！');
+  };
+
+  // ==================== 拖拽排序功能 ====================
+
+  const moveHabit = async (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+
+    const newHabits = [...habits];
+    const [movedHabit] = newHabits.splice(fromIndex, 1);
+    newHabits.splice(toIndex, 0, movedHabit);
+
+    // 更新order字段
+    const updatedHabits = newHabits.map((h, index) => ({
+      ...h,
+      order: index,
+    }));
+
+    await saveHabits(updatedHabits);
+  };
+
   // ==================== 筛选后的习惯列表 ====================
 
   const filteredHabits = useMemo(() => {
-    if (selectedCategory === 'all') return habits;
-    return habits.filter(h => h.category === selectedCategory);
+    // 排除已归档的习惯
+    const activeHabits = habits.filter(h => !h.archived);
+    if (selectedCategory === 'all') return activeHabits;
+    return activeHabits.filter(h => h.category === selectedCategory);
   }, [habits, selectedCategory]);
 
   // ==================== 渲染组件 ====================
@@ -674,60 +893,84 @@ export default function HabitScreen() {
               <Text style={styles.sectionLink}>查看全部 →</Text>
             </TouchableOpacity>
           </View>
-          {habits.filter(h => isHabitDueOnDate(h, new Date())).map(habit => {
-            const isCompleted = isCompletedToday(habit.id);
-            const stats = getHabitStats(habit);
-            
-            return (
-              <Animated.View
-                key={habit.id}
-                style={[
-                  styles.todayHabitItem,
-                  isCompleted && styles.todayHabitItemCompleted,
-                  { transform: [{ scale: checkAnimations[habit.id] || 1 }] }
-                ]}
-              >
-                <View style={styles.todayHabitContent}>
-                  {/* 打卡按钮 */}
-                  <TouchableOpacity
-                    style={[styles.checkButton, isCompleted && styles.checkButtonCompleted]}
-                    onPress={() => toggleHabit(habit.id)}
-                    activeOpacity={0.7}
-                  >
-                    {isCompleted && <Text style={styles.checkMark}>✓</Text>}
-                  </TouchableOpacity>
-                  
-                  {/* 习惯信息 - 点击进入详情 */}
-                  <TouchableOpacity 
-                    style={styles.todayHabitInfo}
-                    onPress={() => openHabitDetail(habit)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.todayHabitName, isCompleted && styles.todayHabitNameCompleted]}>
-                      {habit.name}
-                    </Text>
-                    <View style={styles.todayHabitMeta}>
-                      <Text style={styles.streakText}>连续 {stats.currentStreak} 天</Text>
-                      <Text style={styles.frequencyText}>• {formatFrequency(habit)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  {/* 习惯图标 */}
-                  <TouchableOpacity onPress={() => openHabitDetail(habit)}>
-                    <View style={[styles.habitIconContainer, { backgroundColor: '#F5F5F5' }]}>
-                      <Text style={{ fontSize: 20 }}>{getIconSymbol(habit.icon)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </Animated.View>
-            );
-          })}
+          {habits
+            .filter(h => !h.archived && !h.paused && isHabitDueOnDate(h, new Date()))
+            .map(habit => {
+              const todayCount = getTodayCheckinCount(habit.id);
+              const targetValue = habit.target?.value || 1;
+              const checkinColor = getCheckinColor(todayCount, targetValue);
+              const stats = getHabitStats(habit);
+              const isCompleted = todayCount >= targetValue;
+
+              return (
+                <Animated.View
+                  key={habit.id}
+                  style={[
+                    styles.todayHabitItem,
+                    isCompleted && styles.todayHabitItemCompleted,
+                    { transform: [{ scale: checkAnimations[habit.id] || 1 }] }
+                  ]}
+                >
+                  <View style={styles.todayHabitContent}>
+                    {/* 打卡按钮 - 新设计 */}
+                    <TouchableOpacity
+                      style={[
+                        styles.checkButtonV2,
+                        { backgroundColor: checkinColor },
+                        todayCount === 0 && styles.checkButtonV2Empty
+                      ]}
+                      onPress={() => handleCheckin(habit)}
+                      onLongPress={() => showCheckinMenu(habit)}
+                      activeOpacity={0.7}
+                      delayLongPress={500}
+                    >
+                      {todayCount > 0 ? (
+                        <Text style={[
+                          styles.checkButtonV2Text,
+                          todayCount >= targetValue * 0.75 && styles.checkButtonV2TextLight
+                        ]}>
+                          {todayCount}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+
+                    {/* 习惯信息 - 点击进入详情 */}
+                    <TouchableOpacity
+                      style={styles.todayHabitInfo}
+                      onPress={() => openHabitDetail(habit)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.todayHabitName, isCompleted && styles.todayHabitNameCompleted]}>
+                        {habit.name}
+                      </Text>
+                      <View style={styles.todayHabitMeta}>
+                        <Text style={styles.streakText}>连续 {stats.currentStreak} 天</Text>
+                        <Text style={styles.frequencyText}>• {formatFrequency(habit)}</Text>
+                        {targetValue > 1 && (
+                          <Text style={styles.targetBadge}>目标 {targetValue} 次</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* 习惯图标 */}
+                    <TouchableOpacity onPress={() => openHabitDetail(habit)}>
+                      <View style={[styles.habitIconContainer, { backgroundColor: '#F5F5F5' }]}>
+                        <Text style={{ fontSize: 20 }}>{getIconSymbol(habit.icon)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              );
+            })}
         </View>
       </ScrollView>
     );
   };
 
   const renderHabitsList = () => {
+    // 按order排序
+    const sortedHabits = [...filteredHabits].sort((a, b) => (a.order || 0) - (b.order || 0));
+
     return (
       <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
         {/* 分类筛选 */}
@@ -764,56 +1007,151 @@ export default function HabitScreen() {
           })}
         </ScrollView>
 
+        {/* 拖拽排序提示 */}
+        <View style={styles.dragHintContainer}>
+          <Text style={styles.dragHintText}>长按并拖动可排序习惯</Text>
+        </View>
+
         {/* 习惯列表 */}
-        {filteredHabits.map(habit => {
+        {sortedHabits.map((habit, index) => {
           const stats = getHabitStats(habit);
           const recentLogs = habitLogs
             .filter(l => l.habitId === habit.id)
             .slice(-30);
+          const todayCount = getTodayCheckinCount(habit.id);
+          const targetValue = habit.target?.value || 1;
+          const checkinColor = getCheckinColor(todayCount, targetValue);
+
+          return (
+            <View
+              key={habit.id}
+              style={[styles.habitListCard, habit.paused && styles.habitListCardPaused]}
+            >
+              <TouchableOpacity
+                onPress={() => openHabitDetail(habit)}
+                onLongPress={() => showCheckinMenu(habit)}
+                activeOpacity={0.8}
+                delayLongPress={500}
+              >
+                <View style={styles.habitListHeader}>
+                  {/* 打卡方块 - 新设计 */}
+                  <TouchableOpacity
+                    style={[
+                      styles.habitListCheckButton,
+                      { backgroundColor: checkinColor },
+                      todayCount === 0 && styles.habitListCheckButtonEmpty
+                    ]}
+                    onPress={() => handleCheckin(habit)}
+                    activeOpacity={0.7}
+                  >
+                    {todayCount > 0 ? (
+                      <Text style={[
+                        styles.habitListCheckButtonText,
+                        todayCount >= targetValue * 0.75 && styles.habitListCheckButtonTextLight
+                      ]}>
+                        {todayCount}
+                      </Text>
+                    ) : (
+                      <Text style={styles.habitListCheckButtonPlus}>+</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  <View style={styles.habitListInfo}>
+                    <View style={styles.habitListNameRow}>
+                      <Text style={[styles.habitListName, habit.paused && styles.habitListNamePaused]}>
+                        {habit.name}
+                      </Text>
+                      {habit.paused && (
+                        <View style={styles.statusBadge}>
+                          <Text style={styles.statusBadgeText}>已暂停</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.habitListMeta}>
+                      {formatFrequency(habit)} • 目标 {targetValue} 次
+                    </Text>
+                  </View>
+                  <View style={styles.habitListStreak}>
+                    <Text style={[styles.habitListStreakNumber, habit.paused && styles.habitListStreakNumberPaused]}>
+                      {stats.currentStreak}
+                    </Text>
+                    <Text style={styles.habitListStreakLabel}>连续天数</Text>
+                  </View>
+                </View>
+
+                {/* 30天打卡网格 */}
+                <View style={styles.miniGrid}>
+                  {Array.from({ length: 30 }).map((_, idx) => {
+                    const logIndex = recentLogs.length - 30 + idx;
+                    const log = logIndex >= 0 ? recentLogs[logIndex] : null;
+                    const isToday = idx === 29;
+
+                    return (
+                      <View
+                        key={idx}
+                        style={[
+                          styles.miniGridCell,
+                          log?.completed && { backgroundColor: habit.paused ? '#9CA3AF' : '#000000' },
+                          !log?.completed && { backgroundColor: '#F5F5F5' },
+                          isToday && styles.miniGridCellToday,
+                        ]}
+                      />
+                    );
+                  })}
+                </View>
+
+                <View style={styles.habitListFooter}>
+                  <Text style={styles.habitListFooterText}>完成率 {stats.completionRate}%</Text>
+                  <Text style={styles.habitListFooterText}>总打卡 {stats.totalCompletions} 次</Text>
+                  <Text style={styles.habitListFooterText}>最长 {stats.longestStreak} 天</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          );
+        })}</ScrollView>
+    );
+  };
+
+  const renderArchivedHabits = () => {
+    const archivedHabits = habits.filter(h => h.archived);
+
+    if (archivedHabits.length === 0) {
+      return (
+        <View style={styles.emptyArchivedContainer}>
+          <Text style={styles.emptyArchivedText}>暂无归档习惯</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+        <Text style={styles.archivedSectionTitle}>已归档习惯</Text>
+        <Text style={styles.archivedSectionSubtitle}>以下习惯已归档，数据保留但不再显示在列表中</Text>
+        {archivedHabits.map(habit => {
+          const stats = getHabitStats(habit);
 
           return (
             <TouchableOpacity
               key={habit.id}
               style={styles.habitListCard}
               onPress={() => openHabitDetail(habit)}
-              onLongPress={() => confirmDeleteHabit(habit)}
               activeOpacity={0.8}
             >
               <View style={styles.habitListHeader}>
-                <View style={[styles.habitListIcon, { backgroundColor: '#000000' }]}>
+                <View style={[styles.habitListIcon, { backgroundColor: '#9CA3AF' }]}>
                   <Text style={styles.habitListIconText}>{getIconSymbol(habit.icon)}</Text>
                 </View>
                 <View style={styles.habitListInfo}>
-                  <Text style={styles.habitListName}>{habit.name}</Text>
+                  <View style={styles.habitListNameRow}>
+                    <Text style={styles.habitListName}>{habit.name}</Text>
+                    <View style={[styles.statusBadge, styles.statusBadgeArchived]}>
+                      <Text style={styles.statusBadgeText}>已归档</Text>
+                    </View>
+                  </View>
                   <Text style={styles.habitListMeta}>
                     {formatFrequency(habit)} • 创建于 {formatDate(habit.createdAt)}
                   </Text>
                 </View>
-                <View style={styles.habitListStreak}>
-                  <Text style={styles.habitListStreakNumber}>{stats.currentStreak}</Text>
-                  <Text style={styles.habitListStreakLabel}>连续天数</Text>
-                </View>
-              </View>
-
-              {/* 30天打卡网格 */}
-              <View style={styles.miniGrid}>
-                {Array.from({ length: 30 }).map((_, idx) => {
-                  const logIndex = recentLogs.length - 30 + idx;
-                  const log = logIndex >= 0 ? recentLogs[logIndex] : null;
-                  const isToday = idx === 29;
-                  
-                  return (
-                    <View
-                      key={idx}
-                      style={[
-                        styles.miniGridCell,
-                        log?.completed && { backgroundColor: '#000000' },
-                        !log?.completed && { backgroundColor: '#F5F5F5' },
-                        isToday && styles.miniGridCellToday,
-                      ]}
-                    />
-                  );
-                })}
               </View>
 
               <View style={styles.habitListFooter}>
@@ -875,6 +1213,44 @@ export default function HabitScreen() {
         total: habits.filter(h => isHabitDueOnDate(h, date)).length || 1,
       });
     }
+
+    // 每周完成次数对比数据（近4周）
+    const weeklyComparison: { week: string; completed: number; target: number }[] = [];
+    for (let week = 3; week >= 0; week--) {
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - today.getDay() - week * 7);
+      let weekCompleted = 0;
+      let weekTarget = 0;
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        const dayLogs = habitLogs.filter(l => l.date === dateStr && l.completed);
+        weekCompleted += dayLogs.length;
+        weekTarget += habits.filter(h => isHabitDueOnDate(h, date)).length;
+      }
+      weeklyComparison.push({
+        week: week === 0 ? '本周' : `${week}周前`,
+        completed: weekCompleted,
+        target: weekTarget,
+      });
+    }
+
+    // 习惯完成占比数据（饼图）
+    const habitCompletionData = habits
+      .map(habit => {
+        const habitStats = getHabitStats(habit);
+        return {
+          habit,
+          completions: habitStats.totalCompletions,
+          rate: habitStats.completionRate,
+        };
+      })
+      .filter(item => item.completions > 0)
+      .sort((a, b) => b.completions - a.completions)
+      .slice(0, 5); // 取前5个
+
+    const totalCompletions = habitCompletionData.reduce((sum, item) => sum + item.completions, 0);
 
     // 活跃习惯数（最近7天有打卡）
     const activeHabits = habits.filter(h => {
@@ -997,6 +1373,104 @@ export default function HabitScreen() {
                 </View>
               );
             })}
+          </View>
+        </View>
+
+        {/* 每周完成次数对比 */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>每周完成对比</Text>
+          <Text style={styles.sectionSubtitle}>近4周打卡趋势</Text>
+        </View>
+        <View style={styles.trendCard}>
+          <View style={styles.weeklyComparisonChart}>
+            {weeklyComparison.map((week, index) => {
+              const rate = week.target > 0 ? (week.completed / week.target) * 100 : 0;
+              const isCurrentWeek = index === 3;
+              
+              return (
+                <View key={week.week} style={styles.weeklyComparisonColumn}>
+                  <Text style={styles.weeklyComparisonLabel}>{week.week}</Text>
+                  <View style={styles.weeklyComparisonBarContainer}>
+                    <View 
+                      style={[
+                        styles.weeklyComparisonBar, 
+                        { 
+                          height: `${Math.max(10, rate)}%`,
+                          backgroundColor: isCurrentWeek ? '#000000' : '#666666'
+                        }
+                      ]} 
+                    />
+                  </View>
+                  <Text style={styles.weeklyComparisonValue}>{week.completed}</Text>
+                  <Text style={styles.weeklyComparisonTarget}>/{week.target}</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* 习惯完成占比 - 饼图 */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>习惯完成占比</Text>
+          <Text style={styles.sectionSubtitle}>各习惯打卡次数分布</Text>
+        </View>
+        <View style={styles.pieChartCard}>
+          {/* 饼图 */}
+          <View style={styles.pieChartContainer}>
+            <View style={styles.pieChart}>
+              {habitCompletionData.length > 0 ? (
+                habitCompletionData.map((item, index) => {
+                  const percentage = totalCompletions > 0 ? (item.completions / totalCompletions) * 100 : 0;
+                  const colors = ['#000000', '#333333', '#666666', '#999999', '#CCCCCC'];
+                  const startAngle = habitCompletionData
+                    .slice(0, index)
+                    .reduce((sum, prev) => sum + (prev.completions / totalCompletions) * 360, 0);
+                  const endAngle = startAngle + (percentage / 100) * 360;
+                  
+                  return (
+                    <View
+                      key={item.habit.id}
+                      style={[
+                        styles.pieSlice,
+                        {
+                          backgroundColor: colors[index % colors.length],
+                          transform: [
+                            { rotate: `${startAngle}deg` },
+                          ],
+                        }
+                      ]}
+                    />
+                  );
+                })
+              ) : (
+                <View style={[styles.pieSlice, { backgroundColor: '#E5E7EB' }]} />
+              )}
+              <View style={styles.pieCenter}>
+                <Text style={styles.pieCenterText}>{totalCompletions}</Text>
+                <Text style={styles.pieCenterLabel}>总次数</Text>
+              </View>
+            </View>
+          </View>
+          
+          {/* 图例 */}
+          <View style={styles.pieLegend}>
+            {habitCompletionData.map((item, index) => {
+              const percentage = totalCompletions > 0 ? Math.round((item.completions / totalCompletions) * 100) : 0;
+              const colors = ['#000000', '#333333', '#666666', '#999999', '#CCCCCC'];
+              
+              return (
+                <View key={item.habit.id} style={styles.pieLegendItem}>
+                  <View style={[styles.pieLegendColor, { backgroundColor: colors[index % colors.length] }]} />
+                  <View style={styles.pieLegendInfo}>
+                    <Text style={styles.pieLegendName} numberOfLines={1}>{item.habit.name}</Text>
+                    <Text style={styles.pieLegendValue}>{item.completions}次 ({percentage}%)</Text>
+                  </View>
+                </View>
+              );
+            })}
+            {habitCompletionData.length === 0 && (
+              <Text style={styles.pieEmptyText}>暂无打卡数据</Text>
+            )}
           </View>
         </View>
 
@@ -1164,6 +1638,7 @@ export default function HabitScreen() {
                 { key: 'overview', label: '概览' },
                 { key: 'habits', label: '我的习惯' },
                 { key: 'insights', label: '洞察' },
+                { key: 'archived', label: '归档' },
               ].map(tab => (
                 <TouchableOpacity
                   key={tab.key}
@@ -1188,6 +1663,7 @@ export default function HabitScreen() {
             {activeTab === 'overview' && '习惯概览'}
             {activeTab === 'habits' && '我的习惯'}
             {activeTab === 'insights' && '数据洞察'}
+            {activeTab === 'archived' && '归档习惯'}
           </Text>
         </View>
 
@@ -1195,6 +1671,7 @@ export default function HabitScreen() {
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'habits' && renderHabitsList()}
         {activeTab === 'insights' && renderInsights()}
+        {activeTab === 'archived' && renderArchivedHabits()}
       </SafeAreaView>
 
       {/* 添加/编辑习惯弹窗 */}
@@ -1264,6 +1741,7 @@ export default function HabitScreen() {
                   { key: 'daily', label: '每天' },
                   { key: 'weekly', label: '每周' },
                   { key: 'monthly', label: '每月' },
+                  { key: 'custom', label: '自定义' },
                 ].map(freq => (
                   <TouchableOpacity
                     key={freq.key}
@@ -1276,6 +1754,24 @@ export default function HabitScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* 自定义频率间隔输入 */}
+              {habitFrequency === 'custom' && (
+                <View style={styles.intervalInputContainer}>
+                  <Text style={styles.intervalLabel}>每</Text>
+                  <TextInput
+                    style={styles.intervalInput}
+                    value={String(habitFrequencyInterval)}
+                    onChangeText={(text) => {
+                      const num = parseInt(text) || 1;
+                      setHabitFrequencyInterval(Math.max(1, num));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                  <Text style={styles.intervalLabel}>天</Text>
+                </View>
+              )}
 
               {/* 目标选择 */}
               <Text style={styles.modalLabel}>目标类型</Text>
@@ -1296,6 +1792,37 @@ export default function HabitScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* 目标值输入 */}
+              {habitTarget !== 'none' && (
+                <View style={styles.targetValueContainer}>
+                  <Text style={styles.targetValueLabel}>
+                    {habitTarget === 'streak' ? '连续' : '累计'}目标
+                  </Text>
+                  <TextInput
+                    style={styles.targetValueInput}
+                    value={String(habitTargetValue)}
+                    onChangeText={(text) => {
+                      const num = parseInt(text) || 1;
+                      setHabitTargetValue(Math.max(1, num));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                  />
+                  <Text style={styles.targetValueUnit}>
+                    {habitTarget === 'streak' ? '天' : '次'}
+                  </Text>
+                </View>
+              )}
+
+              {/* 截止日期输入 */}
+              <Text style={styles.modalLabel}>截止日期（可选）</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="例如：2026-12-31"
+                value={habitDeadline}
+                onChangeText={setHabitDeadline}
+              />
 
               {/* 颜色选择 */}
               <Text style={styles.modalLabel}>颜色标记</Text>
@@ -1325,6 +1852,47 @@ export default function HabitScreen() {
               </View>
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* 补卡弹窗 */}
+      <Modal
+        visible={showMakeupModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMakeupModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.makeupModalContent}>
+            <Text style={styles.modalTitle}>补卡</Text>
+            <Text style={styles.makeupSubtitle}>为「{selectedHabit?.name}」补打过去的记录</Text>
+            
+            <Text style={styles.modalLabel}>选择日期（7天内）</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="例如：2026-02-20"
+              value={makeupDate}
+              onChangeText={setMakeupDate}
+            />
+            
+            <Text style={styles.modalLabel}>备注（可选）</Text>
+            <TextInput
+              style={[styles.modalInput, styles.noteInput]}
+              placeholder="添加备注..."
+              value={makeupNote}
+              onChangeText={setMakeupNote}
+              multiline
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setShowMakeupModal(false)}>
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveMakeup}>
+                <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -1485,9 +2053,55 @@ export default function HabitScreen() {
                   )}
                 </View>
 
+                {/* 目标进度显示 */}
+                {selectedHabit.target?.type !== 'none' && selectedHabit.target?.value && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailSectionTitle}>
+                      {selectedHabit.target.type === 'streak' ? '连续打卡目标' : '累计打卡目标'}
+                    </Text>
+                    <View style={styles.goalProgressContainer}>
+                      <View style={styles.goalProgressHeader}>
+                        <Text style={styles.goalProgressText}>
+                          {selectedHabit.target.type === 'streak'
+                            ? `${getHabitStats(selectedHabit).currentStreak} / ${selectedHabit.target.value} 天`
+                            : `${getHabitStats(selectedHabit).totalCompletions} / ${selectedHabit.target.value} 次`}
+                        </Text>
+                        <Text style={styles.goalProgressPercent}>
+                          {Math.min(100, Math.round(
+                            (selectedHabit.target.type === 'streak'
+                              ? getHabitStats(selectedHabit).currentStreak
+                              : getHabitStats(selectedHabit).totalCompletions
+                            ) / selectedHabit.target.value * 100
+                          ))}%
+                        </Text>
+                      </View>
+                      <View style={styles.goalProgressBar}>
+                        <View
+                          style={[
+                            styles.goalProgressFill,
+                            {
+                              width: `${Math.min(100, Math.round(
+                                (selectedHabit.target.type === 'streak'
+                                  ? getHabitStats(selectedHabit).currentStreak
+                                  : getHabitStats(selectedHabit).totalCompletions
+                                ) / selectedHabit.target.value * 100
+                              ))}%`
+                            }
+                          ]}
+                        />
+                      </View>
+                      {selectedHabit.target.deadline && (
+                        <Text style={styles.goalDeadline}>
+                          截止日期: {selectedHabit.target.deadline}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+
                 {/* 操作按钮 */}
                 <View style={styles.detailActions}>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.detailActionButton}
                     onPress={() => {
                       setShowDetailModal(false);
@@ -1495,6 +2109,34 @@ export default function HabitScreen() {
                     }}
                   >
                     <Text style={styles.detailActionButtonText}>编辑习惯</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.detailActionButton, selectedHabit.paused && styles.detailActionButtonActive]}
+                    onPress={() => togglePauseHabit(selectedHabit)}
+                  >
+                    <Text style={[styles.detailActionButtonText, selectedHabit.paused && styles.detailActionButtonTextActive]}>
+                      {selectedHabit.paused ? '恢复习惯' : '暂停习惯'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.detailActionButton, selectedHabit.archived && styles.detailActionButtonActive]}
+                    onPress={() => toggleArchiveHabit(selectedHabit)}
+                  >
+                    <Text style={[styles.detailActionButtonText, selectedHabit.archived && styles.detailActionButtonTextActive]}>
+                      {selectedHabit.archived ? '取消归档' : '归档习惯'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.detailActionButton, styles.detailActionButtonDanger]}
+                    onPress={() => {
+                      setShowDetailModal(false);
+                      confirmDeleteHabit(selectedHabit);
+                    }}
+                  >
+                    <Text style={[styles.detailActionButtonText, styles.detailActionButtonTextDanger]}>删除习惯</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1709,6 +2351,38 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  // 新的打卡按钮样式 V2
+  checkButtonV2: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkButtonV2Empty: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  checkButtonV2Text: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  checkButtonV2TextLight: {
+    color: '#FFFFFF',
+  },
+  targetBadge: {
+    fontSize: 11,
+    color: '#6B7280',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
   todayHabitInfo: {
     flex: 1,
   },
@@ -1793,6 +2467,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  // 新的打卡按钮样式
+  habitListCheckButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  habitListCheckButtonEmpty: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  habitListCheckButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  habitListCheckButtonTextLight: {
+    color: '#FFFFFF',
+  },
+  habitListCheckButtonPlus: {
+    fontSize: 24,
+    fontWeight: '300',
+    color: '#9CA3AF',
   },
   habitListIcon: {
     width: 48,
@@ -2525,6 +3227,7 @@ const styles = StyleSheet.create({
   },
   detailActions: {
     paddingTop: 16,
+    gap: 12,
   },
   detailActionButton: {
     backgroundColor: '#000000',
@@ -2532,9 +3235,321 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
+  detailActionButtonActive: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  detailActionButtonDanger: {
+    backgroundColor: '#FEE2E2',
+  },
   detailActionButtonText: {
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  detailActionButtonTextActive: {
+    color: '#000000',
+  },
+  detailActionButtonTextDanger: {
+    color: '#EF4444',
+  },
+  // 自定义频率间隔输入
+  intervalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+  },
+  intervalLabel: {
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  intervalInput: {
+    width: 60,
+    height: 44,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  // 目标值输入
+  targetValueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+  },
+  targetValueLabel: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  targetValueInput: {
+    width: 80,
+    height: 44,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  targetValueUnit: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  // 目标进度显示
+  goalProgressContainer: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+  },
+  goalProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  goalProgressText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  goalProgressPercent: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  goalProgressBar: {
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  goalProgressFill: {
+    height: 8,
+    backgroundColor: '#000000',
+    borderRadius: 4,
+  },
+  goalDeadline: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 8,
+  },
+  // 习惯列表状态样式
+  habitListCardPaused: {
+    opacity: 0.7,
+  },
+  habitListNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  habitListNamePaused: {
+    color: '#9CA3AF',
+  },
+  habitListStreakNumberPaused: {
+    color: '#9CA3AF',
+  },
+  statusBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusBadgeArchived: {
+    backgroundColor: '#E5E7EB',
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#D97706',
+  },
+  statusBadgeTextArchived: {
+    color: '#6B7280',
+  },
+  // 归档习惯列表
+  emptyArchivedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyArchivedText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  archivedSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  archivedSectionSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginBottom: 16,
+  },
+  // 拖拽排序提示
+  dragHintContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    alignSelf: 'flex-start',
+  },
+  dragHintText: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  // 补卡弹窗
+  makeupModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  makeupSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  noteInput: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  // 每周完成对比图表
+  weeklyComparisonChart: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 120,
+  },
+  weeklyComparisonColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  weeklyComparisonLabel: {
+    fontSize: 11,
+    color: '#8E8E93',
+    marginBottom: 8,
+  },
+  weeklyComparisonBarContainer: {
+    width: 32,
+    height: 80,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 16,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  weeklyComparisonBar: {
+    width: 32,
+    borderRadius: 16,
+  },
+  weeklyComparisonValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginTop: 6,
+  },
+  weeklyComparisonTarget: {
+    fontSize: 11,
+    color: '#8E8E93',
+  },
+  // 饼图样式
+  pieChartCard: {
+    marginHorizontal: 20,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  pieChartContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  pieChart: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  pieSlice: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  pieCenter: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  pieCenterText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  pieCenterLabel: {
+    fontSize: 10,
+    color: '#8E8E93',
+  },
+  pieLegend: {
+    gap: 12,
+  },
+  pieLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pieLegendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  pieLegendInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pieLegendName: {
+    fontSize: 14,
+    color: '#000000',
+    flex: 1,
+  },
+  pieLegendValue: {
+    fontSize: 12,
+    color: '#8E8E93',
+  },
+  pieEmptyText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 });
