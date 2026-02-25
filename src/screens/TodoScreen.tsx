@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar,
   Modal,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +17,7 @@ import { Todo } from '../types';
 import { Colors } from '../constants/colors';
 import { todoStorage } from '../utils/storage';
 import { getTodayString, formatDate, getRelativeTime, generateId } from '../utils/date';
+import { CheckIcon } from '../components/Icons';
 
 // 待办分类
 const CATEGORIES = [
@@ -31,27 +33,35 @@ export default function TodoScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // 加载数据
-  const loadTodos = async () => {
+  const loadTodos = useCallback(async () => {
     const data = await todoStorage.get();
     if (data) setTodos(data);
-  };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       loadTodos();
-    }, [])
+    }, [loadTodos])
   );
 
+  // 下拉刷新
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadTodos();
+    setRefreshing(false);
+  }, [loadTodos]);
+
   // 保存数据
-  const saveTodos = async (newTodos: Todo[]) => {
+  const saveTodos = useCallback(async (newTodos: Todo[]) => {
     setTodos(newTodos);
     await todoStorage.set(newTodos);
-  };
+  }, []);
 
   // 添加待办
-  const addTodo = () => {
+  const addTodo = useCallback(() => {
     if (!newTodoTitle.trim()) return;
     
     const newTodo: Todo = {
@@ -65,41 +75,48 @@ export default function TodoScreen() {
     saveTodos([newTodo, ...todos]);
     setNewTodoTitle('');
     setShowAddModal(false);
-  };
+  }, [newTodoTitle, activeTab, todos, saveTodos]);
 
   // 切换完成状态
-  const toggleTodo = (id: string) => {
+  const toggleTodo = useCallback((id: string) => {
     const newTodos = todos.map(todo =>
       todo.id === id ? { ...todo, completed: !todo.completed } : todo
     );
     saveTodos(newTodos);
-  };
+  }, [todos, saveTodos]);
 
   // 删除待办
-  const deleteTodo = (id: string) => {
+  const deleteTodo = useCallback((id: string) => {
     const newTodos = todos.filter(todo => todo.id !== id);
     saveTodos(newTodos);
-  };
+  }, [todos, saveTodos]);
 
-  // 获取当前标签的待办
-  const filteredTodos = todos.filter(todo => todo.category === activeTab && !todo.completed);
-  const completedTodos = todos.filter(todo => todo.category === activeTab && todo.completed);
-
-  // 渲染待办项
-  const renderTodoItem = ({ item }: { item: Todo }) => (
+  // 获取当前标签的待办 - 使用 useMemo 优化
+  const filteredTodos = useMemo(() => 
+    todos.filter(todo => todo.category === activeTab && !todo.completed),
+    [todos, activeTab]
+  );
+  
+  const completedTodos = useMemo(() => 
+    todos.filter(todo => todo.category === activeTab && todo.completed),
+    [todos, activeTab]
+  );
+  
+  // 渲染待办项 - 使用 useCallback 优化
+  const renderTodoItem = useCallback(({ item }: { item: Todo }) => (
     <TouchableOpacity 
       style={styles.todoItem}
       onPress={() => toggleTodo(item.id)}
       activeOpacity={0.7}
     >
       <View style={[styles.checkbox, item.completed && styles.checkboxChecked]}>
-        {item.completed && <Text style={styles.checkmark}>✓</Text>}
+        {item.completed && <CheckIcon size={14} color="#FFFFFF" />}
       </View>
       <Text style={[styles.todoTitle, item.completed && styles.todoTitleCompleted]}>
         {item.title}
       </Text>
     </TouchableOpacity>
-  );
+  ), [toggleTodo]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -158,6 +175,14 @@ export default function TodoScreen() {
           renderItem={renderTodoItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          getItemLayout={(data, index) => ({ length: 56, offset: 56 * index, index })}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
         />
 
         {/* 已完成区域 */}

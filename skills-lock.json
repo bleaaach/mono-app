@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "25872a21881a950edc3db1f3329664d60405d539660ce05b3265db2de06a7dfd"
+    },
+    "gesture-responses": {
+      "source": "dylantarre/animation-principles",
+      "sourceType": "github",
+      "computedHash": "e979f8c2b30ab8488a5a31df8d2650742f01b43dbc9c5145af2d0acc723288c7"
+    },
+    "interaction-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "ace400887398f46485e1eae552b4219f228c0ff7aea41e3a686bc85b0630ef27"
+    }
+  }
+}

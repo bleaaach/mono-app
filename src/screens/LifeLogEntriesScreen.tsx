@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LifeLogCategory, LifeLogEntry, LogField } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
+import { StarIcon } from '../components/Icons';
 
 type LifeLogStackParamList = {
   LifeLogHome: undefined;
@@ -30,9 +31,10 @@ const RatingInput = ({ value, onChange }: { value: number; onChange: (v: number)
   <View style={styles.ratingContainer}>
     {[1, 2, 3, 4, 5].map(star => (
       <TouchableOpacity key={star} onPress={() => onChange(star)}>
-        <Text style={[styles.ratingStar, star <= value && styles.ratingStarActive]}>
-          ★
-        </Text>
+        <StarIcon
+          size={24}
+          color={star <= value ? '#FFB800' : '#D1D5DB'}
+        />
       </TouchableOpacity>
     ))}
   </View>
@@ -209,7 +211,13 @@ export default function LifeLogEntriesScreen() {
     if (!value) return null;
 
     if (field.type === 'rating') {
-      return '★'.repeat(Number(value)) + '☆'.repeat(5 - Number(value));
+      return (
+        <View style={{ flexDirection: 'row' }}>
+          {Array.from({ length: Number(value) }).map((_, i) => (
+            <StarIcon key={i} size={14} color="#FFB800" />
+          ))}
+        </View>
+      );
     }
     return String(value);
   };

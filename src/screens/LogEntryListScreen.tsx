@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  TextInput,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,7 +26,13 @@ export default function LogEntryListScreen() {
 
   const [category, setCategory] = useState<LifeLogCategory | null>(null);
   const [entries, setEntries] = useState<LifeLogEntry[]>([]);
+  const [filteredEntries, setFilteredEntries] = useState<LifeLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -38,12 +47,57 @@ export default function LogEntryListScreen() {
       const categoryEntries = allEntries?.filter(e => e.categoryId === categoryId) || [];
       categoryEntries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setEntries(categoryEntries);
+      setFilteredEntries(categoryEntries);
+
+      // 提取所有标签
+      const tagsSet = new Set<string>();
+      categoryEntries.forEach(entry => {
+        entry.tags.forEach(tag => tagsSet.add(tag));
+      });
+      setAllTags(Array.from(tagsSet).sort());
     } catch (error) {
       console.error('加载数据失败:', error);
     } finally {
       setLoading(false);
     }
   }, [categoryId]);
+
+  // 搜索和筛选
+  useEffect(() => {
+    let result = [...entries];
+
+    // 关键词搜索
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(entry => {
+        // 搜索标题
+        const titleField = category?.fields[0];
+        const title = titleField ? entry.data[titleField.id] : entry.title;
+        if (title?.toLowerCase().includes(query)) return true;
+
+        // 搜索标签
+        if (entry.tags.some(tag => tag.toLowerCase().includes(query))) return true;
+
+        // 搜索内容
+        return category?.fields.some(field => {
+          const value = entry.data[field.id];
+          if (typeof value === 'string' && value.toLowerCase().includes(query)) {
+            return true;
+          }
+          return false;
+        });
+      });
+    }
+
+    // 标签筛选
+    if (selectedTags.length > 0) {
+      result = result.filter(entry =>
+        selectedTags.some(tag => entry.tags.includes(tag))
+      );
+    }
+
+    setFilteredEntries(result);
+  }, [searchQuery, selectedTags, entries, category]);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,10 +223,28 @@ export default function LogEntryListScreen() {
       <View style={styles.emptyIcon}>
         <Ionicons name="document-text-outline" size={32} color="#999" />
       </View>
-      <Text style={styles.emptyTitle}>还没有记录</Text>
-      <Text style={styles.emptySubtitle}>点击右下角添加第一条记录</Text>
+      <Text style={styles.emptyTitle}>
+        {searchQuery || selectedTags.length > 0 ? '没有匹配的记录' : '还没有记录'}
+      </Text>
+      <Text style={styles.emptySubtitle}>
+        {searchQuery || selectedTags.length > 0 ? '尝试其他搜索条件' : '点击右下角添加第一条记录'}
+      </Text>
     </View>
   );
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags(prev =>
+      prev.includes(tag)
+        ? prev.filter(t => t !== tag)
+        : [...prev, tag]
+    );
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedTags([]);
+    setShowSearch(false);
+  };
 
   if (loading) {
     return (
@@ -193,22 +265,92 @@ export default function LogEntryListScreen() {
           <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{category?.name || '记录列表'}</Text>
-        <View style={styles.statsButton} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => setShowSearch(!showSearch)}
+          >
+            <Ionicons name={showSearch ? "close" : "search"} size={22} color="#000" />
+          </TouchableOpacity>
+          {allTags.length > 0 && (
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setShowFilterModal(true)}
+            >
+              <Ionicons name="filter" size={22} color="#000" />
+              {selectedTags.length > 0 && (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>{selectedTags.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+
+      {/* Search Bar */}
+      {showSearch && (
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={18} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="搜索标题、内容、标签..."
+            placeholderTextColor="#999"
+            autoFocus
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#999" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Active Filters */}
+      {(searchQuery || selectedTags.length > 0) && (
+        <View style={styles.activeFilters}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {searchQuery && (
+              <View style={styles.filterChip}>
+                <Text style={styles.filterChipText}>搜索: {searchQuery}</Text>
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close" size={14} color="#666" />
+                </TouchableOpacity>
+              </View>
+            )}
+            {selectedTags.map(tag => (
+              <View key={tag} style={styles.filterChip}>
+                <Text style={styles.filterChipText}>{tag}</Text>
+                <TouchableOpacity onPress={() => toggleTag(tag)}>
+                  <Ionicons name="close" size={14} color="#666" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.clearFiltersButton} onPress={clearFilters}>
+              <Text style={styles.clearFiltersText}>清除全部</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
 
       {/* 记录数量 */}
       <View style={styles.countBar}>
-        <Text style={styles.countText}>共 {entries.length} 条记录</Text>
+        <Text style={styles.countText}>
+          共 {filteredEntries.length} 条记录
+          {filteredEntries.length !== entries.length && ` (总计 ${entries.length})`}
+        </Text>
       </View>
 
       {/* Entry List */}
       <FlatList
-        data={entries}
+        data={filteredEntries}
         renderItem={renderEntry}
         keyExtractor={item => item.id}
         contentContainerStyle={[
           styles.listContainer,
-          entries.length === 0 && styles.emptyListContainer,
+          filteredEntries.length === 0 && styles.emptyListContainer,
         ]}
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
@@ -221,6 +363,70 @@ export default function LogEntryListScreen() {
       >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
+
+      {/* Filter Modal */}
+      <Modal
+        visible={showFilterModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFilterModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>筛选标签</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {allTags.length === 0 ? (
+                <Text style={styles.noTagsText}>该分类下没有标签</Text>
+              ) : (
+                <View style={styles.tagsGrid}>
+                  {allTags.map(tag => (
+                    <TouchableOpacity
+                      key={tag}
+                      style={[
+                        styles.tagOption,
+                        selectedTags.includes(tag) && styles.tagOptionSelected,
+                      ]}
+                      onPress={() => toggleTag(tag)}
+                    >
+                      <Text
+                        style={[
+                          styles.tagOptionText,
+                          selectedTags.includes(tag) && styles.tagOptionTextSelected,
+                        ]}
+                      >
+                        {tag}
+                      </Text>
+                      {selectedTags.includes(tag) && (
+                        <Ionicons name="checkmark" size={14} color="#fff" style={styles.checkIcon} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.clearButton} onPress={() => setSelectedTags([])}>
+                <Text style={styles.clearButtonText}>清除筛选</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.applyButton}
+                onPress={() => setShowFilterModal(false)}
+              >
+                <Text style={styles.applyButtonText}>
+                  确定 {selectedTags.length > 0 && `(${selectedTags.length})`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -258,11 +464,80 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#000',
   },
-  statsButton: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
     width: 40,
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: '#ff3b30',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterBadgeText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  // 搜索栏
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    backgroundColor: '#f9f9f9',
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#000',
+    paddingVertical: 8,
+  },
+  // 活跃筛选
+  activeFilters: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    gap: 6,
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: '#333',
+  },
+  clearFiltersButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  clearFiltersText: {
+    fontSize: 13,
+    color: '#666',
   },
   // 计数栏
   countBar: {
@@ -398,6 +673,98 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 14,
     color: '#999',
+  },
+  // 筛选弹窗
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  noTagsText: {
+    fontSize: 15,
+    color: '#999',
+    textAlign: 'center',
+    paddingVertical: 40,
+  },
+  tagsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  tagOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 6,
+  },
+  tagOptionSelected: {
+    backgroundColor: '#000',
+  },
+  tagOptionText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  tagOptionTextSelected: {
+    color: '#fff',
+  },
+  checkIcon: {
+    marginLeft: 2,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  clearButton: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+  },
+  clearButtonText: {
+    fontSize: 15,
+    color: '#666',
+    fontWeight: '500',
+  },
+  applyButton: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: '#000',
+    borderRadius: 12,
+  },
+  applyButtonText: {
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: '600',
   },
   // 添加按钮
   addButton: {

@@ -11,13 +11,14 @@ import {
   Dimensions,
   Alert,
   Animated,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
 import { Habit, HabitLog, HabitStats } from '../types';
 import { Colors } from '../constants/colors';
-import { habitStorage, habitLogStorage } from '../utils/storage';
+import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory } from '../utils/storage';
 import { getTodayString, formatDate } from '../utils/date';
 import { generateId } from '../utils/id';
 import {
@@ -42,6 +43,7 @@ import {
   CoffeeIcon,
   AppleIcon,
   RunIcon,
+  CloseIcon,
 } from '../components/Icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -113,12 +115,12 @@ const ICON_COMPONENT_MAP: { [key: string]: React.FC<{ size?: number; color?: str
   'other': OtherIcon,
 };
 
-// 兼容旧数据的 emoji 映射
+// 兼容旧数据的 emoji 映射 - 映射到 SVG 图标名称
 const LEGACY_EMOJI_MAP: { [key: string]: string } = {
   '✓': 'check', '★': 'star', '♥': 'heart', '☀': 'sun', '☽': 'moon',
   '⚡': 'fire', '💪': 'muscle', '🧘': 'yoga', '🎵': 'music', '🎨': 'art',
-  '💡': 'bulb', '☕': 'coffee', '🍎': 'apple', '�': 'run', '📚': 'book',
-  '❤️': 'heart', '🏠': 'life', '📖': 'book', '🌙': 'moon', '💼': 'work',
+  '💡': 'bulb', '☕': 'coffee', '🍎': 'apple', '🏃': 'run', '📚': 'read',
+  '❤️': 'heart', '🏠': 'life', '📖': 'read', '🌙': 'moon', '💼': 'work',
 };
 
 // 获取图标组件
@@ -128,34 +130,10 @@ const getIconComponent = (icon: string): React.FC<{ size?: number; color?: strin
   return CheckIcon;
 };
 
-// 获取图标符号（用于黑白极简风格）
+// 获取图标符号（已废弃，使用 SVG 图标替代）
 const getIconSymbol = (icon: string): string => {
-  const symbolMap: { [key: string]: string } = {
-    'check': '✓',
-    'star': '★',
-    'heart': '♥',
-    'sun': '☀',
-    'moon': '☽',
-    'fire': '⚡',
-    'muscle': '💪',
-    'yoga': '🧘',
-    'music': '♪',
-    'art': '✎',
-    'bulb': '💡',
-    'coffee': '☕',
-    'apple': '🍎',
-    'run': '🏃',
-    'book': '📚',
-    'health': '♥',
-    'study': '✎',
-    'work': '💼',
-    'life': '🏠',
-    'sport': '⚡',
-    'read': '📚',
-    'meditation': '🧘',
-    'other': '○',
-  };
-  return symbolMap[icon] || symbolMap[LEGACY_EMOJI_MAP[icon]] || '○';
+  // 返回空字符串，因为现在使用 SVG 图标
+  return '';
 };
 
 // 热力图颜色
@@ -178,6 +156,10 @@ export default function HabitScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
+  // 热力图年份切换
+  const [heatmapYear, setHeatmapYear] = useState<number>(new Date().getFullYear());
+  const [selectedHeatmapDate, setSelectedHeatmapDate] = useState<string | null>(null);
+  
   // 动画值
   const [checkAnimations] = useState<{ [key: string]: Animated.Value }>({});
   
@@ -193,6 +175,8 @@ export default function HabitScreen() {
   const [habitTarget, setHabitTarget] = useState<'streak' | 'count' | 'none'>('streak');
   const [habitTargetValue, setHabitTargetValue] = useState<number>(21);
   const [habitDeadline, setHabitDeadline] = useState<string>('');
+  const [habitTags, setHabitTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
 
   // 习惯详情弹窗状态
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -203,7 +187,14 @@ export default function HabitScreen() {
   const [makeupDate, setMakeupDate] = useState<string>('');
   const [makeupNote, setMakeupNote] = useState<string>('');
 
+  // 自定义分类
+  const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState(HABIT_COLORS[0]);
 
+  // 下拉刷新状态
+  const [refreshing, setRefreshing] = useState(false);
 
   // 拖拽排序状态
   const [draggingHabitId, setDraggingHabitId] = useState<string | null>(null);
@@ -211,12 +202,36 @@ export default function HabitScreen() {
   const dragAnimatedValue = useRef(new Animated.Value(0)).current;
 
   const loadData = async () => {
-    const [habitsData, logsData] = await Promise.all([
+    const [habitsData, logsData, categoriesData] = await Promise.all([
       habitStorage.get(),
       habitLogStorage.get(),
+      customCategoryStorage.get(),
     ]);
     if (habitsData) setHabits(habitsData);
     if (logsData) setHabitLogs(logsData);
+    if (categoriesData) setCustomCategories(categoriesData);
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, []);
+
+  // 合并预设分类和自定义分类
+  const getAllCategories = () => {
+    const presetCategories = HABIT_CATEGORIES.map(cat => ({
+      id: cat.id,
+      name: cat.name,
+      color: cat.color,
+      icon: cat.iconComponent.name || cat.id,
+      isCustom: false,
+    }));
+    const customCats = customCategories.map(cat => ({
+      ...cat,
+      isCustom: true,
+    }));
+    return [...presetCategories, ...customCats];
   };
 
   useFocusEffect(
@@ -450,31 +465,48 @@ export default function HabitScreen() {
   // ==================== 热力图数据 ====================
 
   const heatmapData = useMemo(() => {
-    const today = new Date();
     const data: { date: string; intensity: number }[] = [];
+    const startDate = new Date(heatmapYear, 0, 1);
+    const endDate = new Date(heatmapYear, 11, 31);
 
-    for (let week = 0; week < 53; week++) {
-      for (let day = 0; day < 7; day++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - ((52 - week) * 7 + (6 - day)));
-        const dateStr = date.toISOString().split('T')[0];
-        
-        let completedCount = 0;
-        habits.forEach(habit => {
-          const record = habitLogs.find(l => l.habitId === habit.id && l.date === dateStr);
-          if (record?.completed) completedCount++;
-        });
+    // 调整到周一开始
+    const firstDay = startDate.getDay();
+    const daysFromPrevYear = firstDay === 0 ? 6 : firstDay - 1;
+    startDate.setDate(startDate.getDate() - daysFromPrevYear);
 
-        const intensity = habits.length > 0 
-          ? Math.min(4, Math.floor((completedCount / habits.length) * 5))
-          : 0;
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      
+      let completedCount = 0;
+      habits.forEach(habit => {
+        const record = habitLogs.find(l => l.habitId === habit.id && l.date === dateStr);
+        if (record?.completed) completedCount++;
+      });
 
-        data.push({ date: dateStr, intensity });
-      }
+      const intensity = habits.length > 0 
+        ? Math.min(4, Math.floor((completedCount / habits.length) * 5))
+        : 0;
+
+      data.push({ date: dateStr, intensity });
     }
 
     return data;
-  }, [habits, habitLogs]);
+  }, [habits, habitLogs, heatmapYear]);
+
+  // 获取选中日期的打卡详情
+  const getDateDetails = (dateStr: string) => {
+    const dayLogs = habitLogs.filter(l => l.date === dateStr && l.completed);
+    const habitsCompleted = dayLogs.map(log => {
+      const habit = habits.find(h => h.id === log.habitId);
+      return {
+        habitName: habit?.name || '未知习惯',
+        count: log.count,
+        isMakeup: log.isMakeup,
+        note: log.note,
+      };
+    });
+    return { date: dateStr, habitsCompleted };
+  };
 
   // ==================== 操作函数 ====================
 
@@ -607,7 +639,30 @@ export default function HabitScreen() {
     setHabitTarget('streak');
     setHabitTargetValue(21);
     setHabitDeadline('');
+    setHabitTags([]);
+    setTagInput('');
     setShowModal(true);
+  };
+
+  // 添加自定义分类
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    
+    const newCategory = await customCategoryStorage.add({
+      name: newCategoryName.trim(),
+      color: newCategoryColor,
+      icon: 'square',
+    });
+    
+    setCustomCategories([...customCategories, newCategory]);
+    setNewCategoryName('');
+    setShowCategoryModal(false);
+  };
+
+  // 删除自定义分类
+  const handleDeleteCategory = async (categoryId: string) => {
+    await customCategoryStorage.remove(categoryId);
+    setCustomCategories(customCategories.filter(c => c.id !== categoryId));
   };
 
   const openEditModal = (habit: Habit) => {
@@ -621,6 +676,8 @@ export default function HabitScreen() {
     setHabitTarget(habit.target?.type || 'streak');
     setHabitTargetValue(habit.target?.value || 21);
     setHabitDeadline(habit.target?.deadline || '');
+    setHabitTags(habit.tags || []);
+    setTagInput('');
     setShowModal(true);
   };
 
@@ -654,6 +711,7 @@ export default function HabitScreen() {
               color: habitColor,
               icon: habitIcon,
               category: habitCategory,
+              tags: habitTags,
               frequency: frequencyConfig,
               target: targetConfig,
             }
@@ -669,7 +727,7 @@ export default function HabitScreen() {
         color: habitColor,
         icon: habitIcon,
         category: habitCategory,
-        tags: [],
+        tags: habitTags,
         frequency: frequencyConfig,
         target: targetConfig,
         reminders: [],
@@ -825,7 +883,13 @@ export default function HabitScreen() {
     const today = getTodayString();
 
     return (
-      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.tabContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* 核心数据卡片 */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
@@ -839,7 +903,7 @@ export default function HabitScreen() {
             <Text style={styles.statLabel}>最长连续</Text>
             <View style={styles.streakContainer}>
               <Text style={styles.statValue}>{stats.maxStreak}</Text>
-              <Text style={styles.flameEmoji}>🔥</Text>
+              <FireIcon size={20} color={Colors.primary} />
             </View>
             <Text style={styles.statUnit}>天</Text>
           </View>
@@ -860,7 +924,22 @@ export default function HabitScreen() {
         {/* 年度热力图 */}
         <View style={styles.heatmapContainer}>
           <View style={styles.heatmapHeader}>
-            <Text style={styles.sectionTitle}>年度热力图</Text>
+            <View style={styles.heatmapTitleRow}>
+              <TouchableOpacity 
+                onPress={() => setHeatmapYear(y => y - 1)}
+                style={styles.yearButton}
+              >
+                <Text style={styles.yearButtonText}>←</Text>
+              </TouchableOpacity>
+              <Text style={styles.heatmapYearText}>{heatmapYear}年</Text>
+              <TouchableOpacity 
+                onPress={() => setHeatmapYear(y => y + 1)}
+                style={styles.yearButton}
+                disabled={heatmapYear >= new Date().getFullYear()}
+              >
+                <Text style={[styles.yearButtonText, heatmapYear >= new Date().getFullYear() && styles.yearButtonDisabled]}>→</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.heatmapLegend}>
               <Text style={styles.legendText}>少</Text>
               {[0, 1, 2, 3, 4].map(level => (
@@ -874,12 +953,13 @@ export default function HabitScreen() {
           </View>
           <View style={styles.heatmapGrid}>
             {heatmapData.map((item, index) => (
-              <View
+              <TouchableOpacity
                 key={index}
                 style={[
                   styles.heatmapCell,
                   { backgroundColor: HEATMAP_COLORS[item.intensity as keyof typeof HEATMAP_COLORS] },
                 ]}
+                onPress={() => setSelectedHeatmapDate(item.date)}
               />
             ))}
           </View>
@@ -972,7 +1052,13 @@ export default function HabitScreen() {
     const sortedHabits = [...filteredHabits].sort((a, b) => (a.order || 0) - (b.order || 0));
 
     return (
-      <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.tabContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         {/* 分类筛选 */}
         <ScrollView 
           horizontal 
@@ -1502,7 +1588,7 @@ export default function HabitScreen() {
                     </View>
                     {isTop && (
                       <View style={styles.crownBadge}>
-                        <Text style={styles.crownText}>★</Text>
+                        <StarIcon size={14} color="#FFFFFF" />
                       </View>
                     )}
                   </View>
@@ -1571,6 +1657,67 @@ export default function HabitScreen() {
           ))}
         </View>
 
+        {/* 习惯大师成就 */}
+        {(() => {
+          const { getMasterAchievements } = require('../utils/habitUtils');
+          const masterAchievements = getMasterAchievements(habits, habitLogs);
+          if (masterAchievements.length === 0) return null;
+          
+          return (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitleLarge}>习惯大师</Text>
+                <Text style={styles.sectionSubtitle}>同时维持多个习惯的成就</Text>
+              </View>
+              <View style={styles.masterAchievementsContainer}>
+                {masterAchievements.map((achievement: {id: string; name: string; description: string; icon: string; unlocked: boolean; progress: number; required: number; target: number}) => (
+                  <View 
+                    key={achievement.id} 
+                    style={[
+                      styles.masterAchievementItem,
+                      achievement.unlocked && styles.masterAchievementItemUnlocked
+                    ]}
+                  >
+                    <View style={styles.masterAchievementLeft}>
+                      <Text style={styles.masterAchievementIcon}>{achievement.icon}</Text>
+                      <View>
+                        <Text style={[
+                          styles.masterAchievementName,
+                          !achievement.unlocked && styles.masterAchievementNameLocked
+                        ]}>
+                          {achievement.name}
+                        </Text>
+                        <Text style={styles.masterAchievementDesc}>{achievement.description}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.masterAchievementRight}>
+                      {!achievement.unlocked ? (
+                        <View style={styles.masterAchievementProgress}>
+                          <View style={styles.masterAchievementProgressTrack}>
+                            <View 
+                              style={[
+                                styles.masterAchievementProgressFill,
+                                { width: `${(achievement.progress / achievement.target) * 100}%` }
+                              ]} 
+                            />
+                          </View>
+                          <Text style={styles.masterAchievementProgressText}>
+                            {achievement.progress}/{achievement.target}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.masterAchievementUnlockedBadge}>
+                          <CheckIcon size={14} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          );
+        })()}
+
         {/* 周期性分析 - 黑白极简 */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitleLarge}>周期分析</Text>
@@ -1621,6 +1768,93 @@ export default function HabitScreen() {
             })}
           </View>
         </View>
+
+        {/* 习惯关联分析 */}
+        {(() => {
+          const { getHabitCorrelations } = require('../utils/habitUtils');
+          const correlations = getHabitCorrelations(habits, habitLogs);
+          if (correlations.length === 0) return null;
+          
+          return (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitleLarge}>习惯关联</Text>
+                <Text style={styles.sectionSubtitle}>发现习惯间的联系</Text>
+              </View>
+              <View style={styles.correlationCard}>
+                {correlations.slice(0, 3).map((corr: {habitName1: string; habitName2: string; correlationScore: number; description: string}, index: number) => (
+                  <View key={index} style={styles.correlationItem}>
+                    <View style={styles.correlationHeader}>
+                      <View style={styles.correlationHabits}>
+                        <Text style={styles.correlationHabitName}>{corr.habitName1}</Text>
+                        <Text style={styles.correlationLink}>↔</Text>
+                        <Text style={styles.correlationHabitName}>{corr.habitName2}</Text>
+                      </View>
+                      <View style={[styles.correlationBadge, 
+                        corr.correlationScore >= 70 ? styles.correlationBadgeHigh :
+                        corr.correlationScore >= 50 ? styles.correlationBadgeMedium :
+                        styles.correlationBadgeLow
+                      ]}>
+                        <Text style={styles.correlationScore}>{corr.correlationScore}%</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.correlationDesc}>{corr.description}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          );
+        })()}
+
+        {/* 完成概率预测 */}
+        {(() => {
+          const { getAllCompletionPredictions } = require('../utils/habitUtils');
+          const predictions = getAllCompletionPredictions(habits, habitLogs);
+          if (predictions.length === 0) return null;
+          
+          return (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitleLarge}>完成预测</Text>
+                <Text style={styles.sectionSubtitle}>基于历史数据的智能预测</Text>
+              </View>
+              <View style={styles.predictionCard}>
+                {predictions.slice(0, 3).map((pred: {habitName: string; trend: string; probability: number; confidence: number; todayProbability: number; suggestion: string}, index: number) => (
+                  <View key={index} style={styles.predictionItem}>
+                    <View style={styles.predictionHeader}>
+                      <Text style={styles.predictionHabitName}>{pred.habitName}</Text>
+                      <View style={[styles.predictionTrend,
+                        pred.trend === 'improving' ? styles.predictionTrendUp :
+                        pred.trend === 'declining' ? styles.predictionTrendDown :
+                        styles.predictionTrendStable
+                      ]}>
+                        <Text style={styles.predictionTrendText}>
+                          {pred.trend === 'improving' ? '↑' : pred.trend === 'declining' ? '↓' : '→'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.predictionBarContainer}>
+                      <View style={styles.predictionBarTrack}>
+                        <View 
+                          style={[
+                            styles.predictionBarFill, 
+                            { 
+                              width: `${pred.todayProbability}%`,
+                              backgroundColor: pred.todayProbability >= 70 ? '#22C55E' : 
+                                              pred.todayProbability >= 40 ? '#F59E0B' : '#EF4444'
+                            }
+                          ]} 
+                        />
+                      </View>
+                      <Text style={styles.predictionValue}>{pred.todayProbability}%</Text>
+                    </View>
+                    <Text style={styles.predictionSuggestion}>{pred.suggestion}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          );
+        })()}
       </ScrollView>
     );
   };
@@ -1713,7 +1947,12 @@ export default function HabitScreen() {
               </View>
 
               {/* 分类选择 */}
-              <Text style={styles.modalLabel}>分类</Text>
+              <View style={styles.categoryHeader}>
+                <Text style={styles.modalLabel}>分类</Text>
+                <TouchableOpacity onPress={() => setShowCategoryModal(true)}>
+                  <Text style={styles.categoryManageText}>管理分类</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.categoryGrid}>
                 {HABIT_CATEGORIES.map(cat => {
                   const IconComp = cat.iconComponent;
@@ -1732,6 +1971,20 @@ export default function HabitScreen() {
                     </TouchableOpacity>
                   );
                 })}
+                {customCategories.map(cat => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[styles.categoryOption, habitCategory === cat.id && styles.categoryOptionActive]}
+                    onPress={() => setHabitCategory(cat.id)}
+                  >
+                    <View style={[styles.categoryOptionIcon, { backgroundColor: cat.color + '20' }]}>
+                      <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
+                    </View>
+                    <Text style={[styles.categoryOptionText, habitCategory === cat.id && styles.categoryOptionTextActive]}>
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
               {/* 频率选择 */}
@@ -1823,6 +2076,38 @@ export default function HabitScreen() {
                 value={habitDeadline}
                 onChangeText={setHabitDeadline}
               />
+
+              {/* 标签输入 */}
+              <Text style={styles.modalLabel}>标签</Text>
+              <View style={styles.tagInputContainer}>
+                <TextInput
+                  style={styles.tagInput}
+                  placeholder="输入标签后按回车添加"
+                  value={tagInput}
+                  onChangeText={setTagInput}
+                  onSubmitEditing={() => {
+                    if (tagInput.trim() && !habitTags.includes(tagInput.trim())) {
+                      setHabitTags([...habitTags, tagInput.trim()]);
+                      setTagInput('');
+                    }
+                  }}
+                />
+              </View>
+              {habitTags.length > 0 && (
+                <View style={styles.tagList}>
+                  {habitTags.map((tag, index) => (
+                    <View key={index} style={styles.tagItem}>
+                      <Text style={styles.tagText}>{tag}</Text>
+                      <TouchableOpacity
+                        onPress={() => setHabitTags(habitTags.filter((_, i) => i !== index))}
+                        style={styles.tagRemoveButton}
+                      >
+                        <Text style={styles.tagRemoveText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
 
               {/* 颜色选择 */}
               <Text style={styles.modalLabel}>颜色标记</Text>
@@ -1918,11 +2203,11 @@ export default function HabitScreen() {
                       {HABIT_CATEGORIES.find(c => c.id === selectedHabit.category)?.name || '其他'} • {formatFrequency(selectedHabit)}
                     </Text>
                   </View>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.detailCloseButton}
                     onPress={() => setShowDetailModal(false)}
                   >
-                    <Text style={styles.detailCloseText}>✕</Text>
+                    <CloseIcon size={24} color={Colors.gray[500]} />
                   </TouchableOpacity>
                 </View>
 
@@ -2144,6 +2429,119 @@ export default function HabitScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* 热力图日期详情弹窗 */}
+      <Modal
+        visible={selectedHeatmapDate !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedHeatmapDate(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.heatmapDetailModal}>
+            <View style={styles.heatmapDetailHeader}>
+              <Text style={styles.heatmapDetailTitle}>
+                {selectedHeatmapDate ? formatDate(selectedHeatmapDate) : ''}
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedHeatmapDate(null)}>
+                <CloseIcon size={24} color={Colors.gray[500]} />
+              </TouchableOpacity>
+            </View>
+            {selectedHeatmapDate && (
+              <View style={styles.heatmapDetailContent}>
+                {getDateDetails(selectedHeatmapDate).habitsCompleted.length > 0 ? (
+                  getDateDetails(selectedHeatmapDate).habitsCompleted.map((item, index) => (
+                    <View key={index} style={styles.heatmapDetailItem}>
+                      <Text style={styles.heatmapDetailHabitName}>{item.habitName}</Text>
+                      <View style={styles.heatmapDetailTags}>
+                        <Text style={styles.heatmapDetailCount}>×{item.count}</Text>
+                        {item.isMakeup && <Text style={styles.heatmapDetailMakeup}>补卡</Text>}
+                      </View>
+                      {item.note && <Text style={styles.heatmapDetailNote}>{item.note}</Text>}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.heatmapDetailEmpty}>今日无打卡记录</Text>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 分类管理弹窗 */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.categoryModalContent}>
+            <View style={styles.categoryModalHeader}>
+              <Text style={styles.modalTitle}>管理分类</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                <CloseIcon size={24} color={Colors.gray[500]} />
+              </TouchableOpacity>
+            </View>
+            
+            {/* 添加新分类 */}
+            <View style={styles.addCategorySection}>
+              <Text style={styles.modalLabel}>添加新分类</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="分类名称"
+                value={newCategoryName}
+                onChangeText={setNewCategoryName}
+              />
+              <Text style={styles.modalLabel}>选择颜色</Text>
+              <View style={styles.colorGrid}>
+                {HABIT_COLORS.map(color => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorOption,
+                      { backgroundColor: color },
+                      newCategoryColor === color && styles.colorOptionActive
+                    ]}
+                    onPress={() => setNewCategoryColor(color)}
+                  />
+                ))}
+              </View>
+              <TouchableOpacity 
+                style={[styles.modalButtonConfirm, !newCategoryName.trim() && styles.modalButtonDisabled]}
+                onPress={handleAddCategory}
+                disabled={!newCategoryName.trim()}
+              >
+                <Text style={styles.modalButtonConfirmText}>添加分类</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* 自定义分类列表 */}
+            <Text style={styles.modalLabel}>我的分类</Text>
+            {customCategories.length === 0 ? (
+              <Text style={styles.emptyCategoryText}>暂无自定义分类</Text>
+            ) : (
+              <View style={styles.customCategoryList}>
+                {customCategories.map(cat => (
+                  <View key={cat.id} style={styles.customCategoryItem}>
+                    <View style={styles.customCategoryInfo}>
+                      <View style={[styles.customCategoryColorDot, { backgroundColor: cat.color }]} />
+                      <Text style={styles.customCategoryName}>{cat.name}</Text>
+                    </View>
+                    <TouchableOpacity 
+                      style={styles.deleteCategoryButton}
+                      onPress={() => handleDeleteCategory(cat.id)}
+                    >
+                      <Text style={styles.deleteCategoryButtonText}>删除</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -2312,6 +2710,100 @@ const styles = StyleSheet.create({
     width: (SCREEN_WIDTH - 72) / 53,
     height: (SCREEN_WIDTH - 72) / 53,
     borderRadius: 2,
+  },
+  heatmapTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  yearButton: {
+    padding: 4,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+  },
+  yearButtonText: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '600',
+  },
+  yearButtonDisabled: {
+    color: '#D1D5DB',
+  },
+  heatmapYearText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+    minWidth: 70,
+    textAlign: 'center',
+  },
+  heatmapDetailModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: SCREEN_WIDTH - 48,
+    maxHeight: 400,
+  },
+  heatmapDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  heatmapDetailTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  heatmapDetailClose: {
+    fontSize: 20,
+    color: '#6B7280',
+    padding: 4,
+  },
+  heatmapDetailContent: {
+    gap: 12,
+  },
+  heatmapDetailItem: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+  },
+  heatmapDetailHabitName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 6,
+  },
+  heatmapDetailTags: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+  },
+  heatmapDetailCount: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+  heatmapDetailMakeup: {
+    fontSize: 11,
+    color: '#F59E0B',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  heatmapDetailNote: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  heatmapDetailEmpty: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 24,
   },
   // 今日习惯样式
   todayHabitsContainer: {
@@ -2790,6 +3282,85 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '500',
   },
+  // 习惯大师成就样式
+  masterAchievementsContainer: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    gap: 12,
+  },
+  masterAchievementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  masterAchievementItemUnlocked: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  masterAchievementLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  masterAchievementIcon: {
+    fontSize: 28,
+  },
+  masterAchievementName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  masterAchievementNameLocked: {
+    color: '#6B7280',
+  },
+  masterAchievementDesc: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  masterAchievementRight: {
+    alignItems: 'flex-end',
+  },
+  masterAchievementProgress: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  masterAchievementProgressTrack: {
+    width: 60,
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  masterAchievementProgressFill: {
+    height: '100%',
+    backgroundColor: '#22C55E',
+    borderRadius: 3,
+  },
+  masterAchievementProgressText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  masterAchievementUnlockedBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#22C55E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  masterAchievementUnlockedText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
   weeklyAnalysisCard: {
     marginHorizontal: 20,
     backgroundColor: '#F9FAFB',
@@ -2834,6 +3405,137 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#8E8E93',
     marginTop: 4,
+  },
+  // 习惯关联分析样式
+  correlationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    gap: 16,
+  },
+  correlationItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    paddingBottom: 12,
+  },
+  correlationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  correlationHabits: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  correlationHabitName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  correlationLink: {
+    fontSize: 14,
+    color: '#9CA3AF',
+  },
+  correlationBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  correlationBadgeHigh: {
+    backgroundColor: '#DCFCE7',
+  },
+  correlationBadgeMedium: {
+    backgroundColor: '#DBEAFE',
+  },
+  correlationBadgeLow: {
+    backgroundColor: '#F3F4F6',
+  },
+  correlationScore: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  correlationDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  // 完成预测样式
+  predictionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    gap: 16,
+  },
+  predictionItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    paddingBottom: 12,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  predictionHabitName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  predictionTrend: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  predictionTrendUp: {
+    backgroundColor: '#DCFCE7',
+  },
+  predictionTrendDown: {
+    backgroundColor: '#FEE2E2',
+  },
+  predictionTrendStable: {
+    backgroundColor: '#F3F4F6',
+  },
+  predictionTrendText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  predictionBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  predictionBarTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  predictionBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  predictionValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    minWidth: 40,
+    textAlign: 'right',
+  },
+  predictionSuggestion: {
+    fontSize: 13,
+    color: '#6B7280',
   },
   // 弹窗样式
   modalOverlay: {
@@ -2920,6 +3622,137 @@ const styles = StyleSheet.create({
   },
   categoryOptionTextActive: {
     color: '#FFFFFF',
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  categoryManageText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+  customCategoryDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  // 分类管理弹窗样式
+  categoryModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  categoryModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalClose: {
+    fontSize: 20,
+    color: '#6B7280',
+    padding: 4,
+  },
+  addCategorySection: {
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  // 标签样式
+  tagInputContainer: {
+    marginBottom: 8,
+  },
+  tagInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    backgroundColor: '#FAFAFA',
+  },
+  tagList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  tagItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  tagText: {
+    fontSize: 13,
+    color: '#4F46E5',
+    fontWeight: '500',
+  },
+  tagRemoveButton: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#C7D2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tagRemoveText: {
+    fontSize: 12,
+    color: '#4F46E5',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  modalButtonDisabled: {
+    backgroundColor: '#E5E7EB',
+  },
+  emptyCategoryText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  customCategoryList: {
+    gap: 8,
+  },
+  customCategoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+  },
+  customCategoryInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  customCategoryColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  customCategoryName: {
+    fontSize: 15,
+    color: '#000000',
+  },
+  deleteCategoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 6,
+  },
+  deleteCategoryButtonText: {
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '500',
   },
   frequencyButtons: {
     flexDirection: 'row',

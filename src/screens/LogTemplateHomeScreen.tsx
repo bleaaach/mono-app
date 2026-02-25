@@ -16,12 +16,16 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LifeLogCategory, LifeLogEntry } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
+import { Colors } from '../constants/colors';
 import type { LogStackParamList } from '../navigation/LogNavigator';
 import {
   MovieIcon,
   CoffeeIcon,
   WriteIcon,
   OtherIcon,
+  ChartIcon,
+  RestIcon,
+  SearchIcon,
 } from '../components/Icons';
 
 type NavigationProp = NativeStackNavigationProp<LogStackParamList>;
@@ -193,6 +197,37 @@ export default function LogTemplateHomeScreen() {
           </View>
         </View>
 
+        {/* Quick Actions */}
+        <View style={styles.quickActionsSection}>
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => navigation.navigate('LogStats')}
+          >
+            <View style={styles.quickActionIcon}>
+              <ChartIcon size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.quickActionText}>统计</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => navigation.navigate('LogCalendar')}
+          >
+            <View style={styles.quickActionIcon}>
+              <RestIcon size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.quickActionText}>日历</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickActionButton}
+            onPress={() => navigation.navigate('LogTags')}
+          >
+            <View style={styles.quickActionIcon}>
+              <SearchIcon size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.quickActionText}>标签</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Templates */}
         <View style={styles.templatesSection}>
           <View style={styles.sectionHeader}>
@@ -341,6 +376,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  quickActionsSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  quickActionIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  quickActionText: {
+    fontSize: 13,
+    color: '#666666',
+    fontWeight: '500',
   },
   templatesSection: {
     paddingHorizontal: 24,

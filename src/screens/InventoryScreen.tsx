@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,12 @@ import {
   ScrollView,
   Image,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { Swipeable } from 'react-native-gesture-handler';
+import Animated, { FadeIn, Layout } from 'react-native-reanimated';
 import { StorageSpace, StorageItem, StorageCategory, StorageTag, ItemFilters, StorageStatistics } from '../types';
 import {
   storageSpaceStorage,
@@ -127,7 +130,7 @@ export default function InventoryScreen() {
   const [statistics, setStatistics] = useState<StorageStatistics | null>(null);
   
   // UI状态
-  const [currentView, setCurrentView] = useState<'home' | 'space' | 'category' | 'search' | 'stats'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'space' | 'category' | 'search' | 'stats' | 'categoryManage' | 'tagManage' | 'expiring' | 'settings'>('home');
   const [selectedSpace, setSelectedSpace] = useState<StorageSpace | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<StorageCategory | null>(null);
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -136,6 +139,8 @@ export default function InventoryScreen() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showItemDetail, setShowItemDetail] = useState<StorageItem | null>(null);
   const [editingItem, setEditingItem] = useState<StorageItem | null>(null);
+  const [expiringItems, setExpiringItems] = useState<StorageItem[]>([]);
+  const [expiredItems, setExpiredItems] = useState<StorageItem[]>([]);
   
   // 筛选状态
   const [filters, setFilters] = useState<ItemFilters>({});
@@ -166,8 +171,36 @@ export default function InventoryScreen() {
     note: '',
   });
 
+  // 分类管理表单
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    icon: 'package',
+    color: '#FF6B6B',
+  });
+  const [editingCategory, setEditingCategory] = useState<StorageCategory | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+
+  // 标签管理表单
+  const [tagForm, setTagForm] = useState({
+    name: '',
+    color: '#2563EB',
+  });
+  const [editingTag, setEditingTag] = useState<StorageTag | null>(null);
+  const [showTagModal, setShowTagModal] = useState(false);
+
+  // 提醒设置
+  const [reminderSettings, setReminderSettings] = useState({
+    expiringSoonDays: 7,
+    enableExpiringAlert: true,
+    enableExpiredAlert: true,
+  });
+  const [showReminderSettings, setShowReminderSettings] = useState(false);
+  
+  // 刷新状态
+  const [refreshing, setRefreshing] = useState(false);
+
   // 加载所有数据
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [spacesData, itemsData, categoriesData, tagsData, statsData] = await Promise.all([
       storageSpaceStorage.get(),
       storageItemStorage.get(),
@@ -180,16 +213,29 @@ export default function InventoryScreen() {
     setCategories(categoriesData);
     setTags(tagsData);
     setStatistics(statsData);
-  };
+
+    // 加载过期物品
+    const expiring = await storageItemStorage.getExpiringSoon(reminderSettings.expiringSoonDays);
+    const expired = await storageItemStorage.getExpired();
+    setExpiringItems(expiring);
+    setExpiredItems(expired);
+  }, [reminderSettings.expiringSoonDays]);
+
+  // 下拉刷新
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  }, [loadData]);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [])
+    }, [loadData])
   );
 
-  // 获取当前显示的物品列表
-  const getDisplayedItems = (): StorageItem[] => {
+  // 使用 useMemo 缓存计算结果
+  const displayedItems = useMemo(() => {
     let filtered = items;
     
     if (currentView === 'space' && selectedSpace) {
@@ -214,25 +260,43 @@ export default function InventoryScreen() {
     }
     
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  };
+  }, [items, currentView, selectedSpace, selectedCategory, searchKeyword, filters]);
 
   // 获取子空间
-  const getChildSpaces = (parentId: string | null): StorageSpace[] => {
+  const getChildSpaces = useCallback((parentId: string | null): StorageSpace[] => {
     return spaces
       .filter(s => s.parentId === parentId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
-  };
+  }, [spaces]);
 
   // 获取空间路径
-  const getSpacePath = (spaceId: string): string => {
+  const getSpacePath = useCallback((spaceId: string): string => {
     const space = spaces.find(s => s.id === spaceId);
     return space?.path || '';
-  };
+  }, [spaces]);
 
   // 获取分类
-  const getCategory = (categoryId: string): StorageCategory | undefined => {
+  const getCategory = useCallback((categoryId: string): StorageCategory | undefined => {
     return categories.find(c => c.id === categoryId);
-  };
+  }, [categories]);
+
+  // 缓存分类数量统计
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    items.forEach(item => {
+      counts.set(item.categoryId, (counts.get(item.categoryId) || 0) + 1);
+    });
+    return counts;
+  }, [items]);
+
+  // 缓存空间物品数量统计
+  const spaceItemCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    items.forEach(item => {
+      counts.set(item.spaceId, (counts.get(item.spaceId) || 0) + 1);
+    });
+    return counts;
+  }, [items]);
 
   // 创建空间
   const handleCreateSpace = async () => {
@@ -272,6 +336,123 @@ export default function InventoryScreen() {
               setSelectedSpace(null);
               setCurrentView('home');
             }
+            loadData();
+          },
+        },
+      ]
+    );
+  };
+
+  // ========== 分类管理 ==========
+  const handleSaveCategory = async () => {
+    if (!categoryForm.name.trim()) {
+      Alert.alert('提示', '请输入分类名称');
+      return;
+    }
+
+    if (editingCategory) {
+      await storageCategoryStorage.update(editingCategory.id, {
+        name: categoryForm.name.trim(),
+        icon: categoryForm.icon,
+        color: categoryForm.color,
+      });
+    } else {
+      await storageCategoryStorage.create({
+        name: categoryForm.name.trim(),
+        icon: categoryForm.icon,
+        color: categoryForm.color,
+        sortOrder: categories.length,
+      });
+    }
+
+    setCategoryForm({ name: '', icon: 'package', color: '#FF6B6B' });
+    setEditingCategory(null);
+    setShowCategoryModal(false);
+    loadData();
+  };
+
+  const handleEditCategory = (category: StorageCategory) => {
+    setEditingCategory(category);
+    setCategoryForm({
+      name: category.name,
+      icon: category.icon,
+      color: category.color,
+    });
+    setShowCategoryModal(true);
+  };
+
+  const handleDeleteCategory = async (category: StorageCategory) => {
+    const itemsUsingCategory = items.filter(i => i.categoryId === category.id);
+    if (itemsUsingCategory.length > 0) {
+      Alert.alert(
+        '无法删除',
+        `该分类下有 ${itemsUsingCategory.length} 个物品，请先删除或移动这些物品。`
+      );
+      return;
+    }
+
+    Alert.alert(
+      '删除分类',
+      `确定要删除分类"${category.name}"吗？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            await storageCategoryStorage.delete(category.id);
+            loadData();
+          },
+        },
+      ]
+    );
+  };
+
+  // ========== 标签管理 ==========
+  const handleSaveTag = async () => {
+    if (!tagForm.name.trim()) {
+      Alert.alert('提示', '请输入标签名称');
+      return;
+    }
+
+    if (editingTag) {
+      await storageTagStorage.update(editingTag.id, {
+        name: tagForm.name.trim(),
+        color: tagForm.color,
+      });
+    } else {
+      await storageTagStorage.create({
+        name: tagForm.name.trim(),
+        color: tagForm.color,
+      });
+    }
+
+    setTagForm({ name: '', color: '#2563EB' });
+    setEditingTag(null);
+    setShowTagModal(false);
+    loadData();
+  };
+
+  const handleEditTag = (tag: StorageTag) => {
+    setEditingTag(tag);
+    setTagForm({
+      name: tag.name,
+      color: tag.color || '#2563EB',
+    });
+    setShowTagModal(true);
+  };
+
+  const handleDeleteTag = async (tag: StorageTag) => {
+    Alert.alert(
+      '删除标签',
+      `确定要删除标签"${tag.name}"吗？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: async () => {
+            await storageTagStorage.delete(tag.id);
             loadData();
           },
         },
@@ -389,7 +570,11 @@ export default function InventoryScreen() {
 
   // 渲染统计卡片
   const renderStatsCard = () => (
-    <View style={styles.statsCard}>
+    <TouchableOpacity
+      style={styles.statsCard}
+      onPress={() => setCurrentView('stats')}
+      activeOpacity={0.8}
+    >
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{statistics?.totalItems || 0}</Text>
@@ -403,14 +588,17 @@ export default function InventoryScreen() {
           <Text style={styles.statValue}>{statistics?.newThisMonth || 0}</Text>
           <Text style={styles.statLabel}>本月新增</Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, statistics?.expiringSoon ? styles.statAlert : null]}>
+        <TouchableOpacity
+          style={styles.statItem}
+          onPress={() => setCurrentView('expiring')}
+        >
+          <Text style={[styles.statValue, (statistics?.expiringSoon || 0) > 0 ? styles.statAlert : null]}>
             {statistics?.expiringSoon || 0}
           </Text>
           <Text style={styles.statLabel}>即将过期</Text>
-        </View>
+        </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   // 渲染空间树
@@ -476,62 +664,112 @@ export default function InventoryScreen() {
     </View>
   );
 
-  // 渲染物品项
-  const renderItem = ({ item }: { item: StorageItem }) => {
+  // 左滑操作按钮
+  const renderRightActions = useCallback((item: StorageItem) => {
+    return (
+      <View style={styles.swipeActions}>
+        <TouchableOpacity 
+          style={[styles.swipeAction, styles.swipeActionEdit]}
+          onPress={() => handleEditItem(item)}
+        >
+          <Text style={styles.swipeActionText}>编辑</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.swipeAction, styles.swipeActionDelete]}
+          onPress={() => handleDeleteItem(item)}
+        >
+          <Text style={styles.swipeActionText}>删除</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [handleEditItem, handleDeleteItem]);
+
+  // 渲染物品项 - 使用 memo 优化
+  const ItemCard = memo(({ item, index }: { item: StorageItem; index: number }) => {
     const category = getCategory(item.categoryId);
     const space = spaces.find(s => s.id === item.spaceId);
     const daysUntilExpiry = item.expiryDate ? getDaysUntilExpiry(item.expiryDate) : null;
     
+    const handlePress = useCallback(() => {
+      setShowItemDetail(item);
+    }, [item]);
+    
     return (
-      <TouchableOpacity
-        style={styles.itemCard}
-        onPress={() => setShowItemDetail(item)}
+      <Animated.View 
+        entering={FadeIn.delay(index * 30)}
+        layout={Layout}
       >
-        <View style={styles.itemHeader}>
-          {item.images && item.images.length > 0 ? (
-            <Image source={{ uri: item.images[0] }} style={styles.itemImage} />
-          ) : (
-            <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
-              {React.createElement(BoxIcon, { size: 24, color: '#999999' })}
-            </View>
-          )}
-          <View style={styles.itemMain}>
-            <Text style={styles.itemName}>{item.name}</Text>
-            <View style={styles.itemMeta}>
-              <Text style={styles.itemCategory}>{category?.name}</Text>
-              <Text style={styles.itemDot}>·</Text>
-              <Text style={styles.itemLocation}>{space?.name}</Text>
-            </View>
-            {item.price !== undefined && (
-              <Text style={styles.itemPrice}>¥{item.price.toLocaleString()}</Text>
-            )}
-          </View>
-        </View>
-        
-        {daysUntilExpiry !== null && daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && (
-          <View style={styles.expiryWarning}>
-            <Text style={styles.expiryWarningText}>
-              ⚠️ {daysUntilExpiry === 0 ? '今天过期' : `${daysUntilExpiry}天后过期`}
-            </Text>
-          </View>
-        )}
-        
-        {item.tags.length > 0 && (
-          <View style={styles.itemTags}>
-            {item.tags.slice(0, 3).map((tag, index) => (
-              <View key={index} style={styles.tagChip}>
-                <Text style={styles.tagText}>{tag}</Text>
+        <Swipeable
+          renderRightActions={() => renderRightActions(item)}
+          friction={2}
+          rightThreshold={40}
+        >
+          <TouchableOpacity
+            style={styles.itemCard}
+            onPress={handlePress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.itemHeader}>
+              {item.images && item.images.length > 0 ? (
+                <Image source={{ uri: item.images[0] }} style={styles.itemImage} resizeMode="cover" />
+              ) : (
+                <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
+                  <BoxIcon size={24} color="#999999" />
+                </View>
+              )}
+              <View style={styles.itemMain}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <View style={styles.itemMeta}>
+                  <Text style={styles.itemCategory}>{category?.name}</Text>
+                  <Text style={styles.itemDot}>·</Text>
+                  <Text style={styles.itemLocation}>{space?.name}</Text>
+                </View>
+                {item.price !== undefined && (
+                  <Text style={styles.itemPrice}>¥{item.price.toLocaleString()}</Text>
+                )}
               </View>
-            ))}
-          </View>
-        )}
-      </TouchableOpacity>
+            </View>
+            
+            {daysUntilExpiry !== null && daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && (
+              <View style={styles.expiryWarning}>
+                <Text style={styles.expiryWarningText}>
+                  ! {daysUntilExpiry === 0 ? '今天过期' : `${daysUntilExpiry}天后过期`}
+                </Text>
+              </View>
+            )}
+            
+            {item.tags.length > 0 && (
+              <View style={styles.itemTags}>
+                {item.tags.slice(0, 3).map((tag, index) => (
+                  <View key={index} style={styles.tagChip}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </TouchableOpacity>
+        </Swipeable>
+      </Animated.View>
     );
-  };
+  });
+
+  // 列表渲染函数
+  const renderItem = useCallback(({ item, index }: { item: StorageItem; index: number }) => {
+    return <ItemCard item={item} index={index} />;
+  }, [spaces, getCategory, renderRightActions]);
 
   // 渲染首页
   const renderHome = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={Colors.primary}
+        />
+      }
+    >
       {renderStatsCard()}
       
       {/* 空间导航 */}
@@ -548,12 +786,41 @@ export default function InventoryScreen() {
       </View>
       
       {renderCategoryShortcuts()}
-      
+
+      {/* 管理入口 */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>管理</Text>
+        <View style={styles.manageGrid}>
+          <TouchableOpacity
+            style={styles.manageCard}
+            onPress={() => setCurrentView('categoryManage')}
+          >
+            <View style={[styles.manageCardIcon, { backgroundColor: '#4ECDC420' }]}>
+              <ClothingIcon size={24} color="#4ECDC4" />
+            </View>
+            <Text style={styles.manageCardTitle}>分类管理</Text>
+            <Text style={styles.manageCardCount}>{categories.length} 个分类</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.manageCard}
+            onPress={() => setCurrentView('tagManage')}
+          >
+            <View style={[styles.manageCardIcon, { backgroundColor: '#AA96DA20' }]}>
+              <Text style={[styles.manageCardIconText, { color: '#AA96DA' }]}>#</Text>
+            </View>
+            <Text style={styles.manageCardTitle}>标签管理</Text>
+            <Text style={styles.manageCardCount}>{tags.length} 个标签</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* 最近添加 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>最近添加</Text>
         <View style={styles.itemsList}>
-          {items.slice(0, 5).map(item => renderItem({ item }))}
+          {items.slice(0, 5).map((item, index) => (
+            <ItemCard key={item.id} item={item} index={index} />
+          ))}
         </View>
         {items.length === 0 && (
           <View style={styles.emptyState}>
@@ -569,7 +836,6 @@ export default function InventoryScreen() {
   // 渲染空间详情
   const renderSpaceDetail = () => {
     if (!selectedSpace) return null;
-    const spaceItems = getDisplayedItems();
     const childSpaces = getChildSpaces(selectedSpace.id);
     
     return (
@@ -609,12 +875,24 @@ export default function InventoryScreen() {
         )}
         
         <View style={styles.detailContent}>
-          <Text style={styles.subSectionTitle}>物品 ({spaceItems.length})</Text>
+          <Text style={styles.subSectionTitle}>物品 ({displayedItems.length})</Text>
           <FlatList
-            data={spaceItems}
+            data={displayedItems}
             keyExtractor={item => item.id}
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}
+            getItemLayout={(data, index) => ({ length: 120, offset: 120 * index, index })}
+            initialNumToRender={8}
+            maxToRenderPerBatch={8}
+            windowSize={5}
+            removeClippedSubviews={true}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primary}
+              />
+            }
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <BoxIcon size={48} color="#CCCCCC" />
@@ -630,7 +908,6 @@ export default function InventoryScreen() {
   // 渲染分类详情
   const renderCategoryDetail = () => {
     if (!selectedCategory) return null;
-    const categoryItems = getDisplayedItems();
     
     return (
       <View style={styles.detailContainer}>
@@ -643,10 +920,22 @@ export default function InventoryScreen() {
         </View>
         
         <FlatList
-          data={categoryItems}
+          data={displayedItems}
           keyExtractor={item => item.id}
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
+          getItemLayout={(data, index) => ({ length: 120, offset: 120 * index, index })}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={true}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={Colors.primary}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <BoxIcon size={48} color="#CCCCCC" />
@@ -660,8 +949,6 @@ export default function InventoryScreen() {
 
   // 渲染搜索结果
   const renderSearchResults = () => {
-    const searchItems = getDisplayedItems();
-    
     return (
       <View style={styles.detailContainer}>
         <View style={styles.detailHeader}>
@@ -672,13 +959,18 @@ export default function InventoryScreen() {
           <View style={{ width: 40 }} />
         </View>
         
-        <Text style={styles.searchResultText}>找到 {searchItems.length} 个物品</Text>
+        <Text style={styles.searchResultText}>找到 {displayedItems.length} 个物品</Text>
         
         <FlatList
-          data={searchItems}
+          data={displayedItems}
           keyExtractor={item => item.id}
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
+          getItemLayout={(data, index) => ({ length: 120, offset: 120 * index, index })}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={true}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <SearchIcon size={48} color="#CCCCCC" />
@@ -700,9 +992,41 @@ export default function InventoryScreen() {
         <Text style={styles.detailTitle}>统计</Text>
         <View style={{ width: 40 }} />
       </View>
-      
+
       {renderStatsCard()}
-      
+
+      {/* 价值分析 */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>价值分析</Text>
+        {statistics?.categoryDistribution.map(cat => {
+          const category = getCategory(cat.categoryId);
+          if (!category || cat.value === 0) return null;
+          const totalValue = statistics?.totalValue || 1;
+          return (
+            <View key={cat.categoryId} style={styles.distributionItem}>
+              <View style={styles.distributionInfo}>
+                <View style={styles.distributionIcon}>
+                  {React.createElement(getCategoryIconComponent(category.icon), { size: 20, color: category.color || '#000000' })}
+                </View>
+                <Text style={styles.distributionName}>{category.name}</Text>
+              </View>
+              <View style={styles.distributionBar}>
+                <View
+                  style={[
+                    styles.distributionFill,
+                    {
+                      width: `${(cat.value / totalValue) * 100}%`,
+                      backgroundColor: category.color,
+                    }
+                  ]}
+                />
+              </View>
+              <Text style={styles.distributionCount}>¥{cat.value.toLocaleString()}</Text>
+            </View>
+          );
+        })}
+      </View>
+
       {/* 分类分布 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>分类分布</Text>
@@ -718,14 +1042,14 @@ export default function InventoryScreen() {
                 <Text style={styles.distributionName}>{category.name}</Text>
               </View>
               <View style={styles.distributionBar}>
-                <View 
+                <View
                   style={[
-                    styles.distributionFill, 
-                    { 
+                    styles.distributionFill,
+                    {
                       width: `${statistics.totalItems > 0 ? (cat.count / statistics.totalItems) * 100 : 0}%`,
                       backgroundColor: category.color,
                     }
-                  ]} 
+                  ]}
                 />
               </View>
               <Text style={styles.distributionCount}>{cat.count}</Text>
@@ -733,7 +1057,7 @@ export default function InventoryScreen() {
           );
         })}
       </View>
-      
+
       {/* 空间分布 */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>空间分布</Text>
@@ -749,14 +1073,14 @@ export default function InventoryScreen() {
                 <Text style={styles.distributionName}>{spaceData.name}</Text>
               </View>
               <View style={styles.distributionBar}>
-                <View 
+                <View
                   style={[
-                    styles.distributionFill, 
-                    { 
+                    styles.distributionFill,
+                    {
                       width: `${statistics.totalItems > 0 ? (space.count / statistics.totalItems) * 100 : 0}%`,
                       backgroundColor: Colors.gray[400],
                     }
-                  ]} 
+                  ]}
                 />
               </View>
               <Text style={styles.distributionCount}>{space.count}</Text>
@@ -766,6 +1090,189 @@ export default function InventoryScreen() {
       </View>
     </ScrollView>
   );
+
+  // 渲染分类管理页面
+  const renderCategoryManage = () => (
+    <View style={styles.detailContainer}>
+      <View style={styles.detailHeader}>
+        <TouchableOpacity onPress={() => setCurrentView('home')}>
+          <Text style={styles.backButton}>← 返回</Text>
+        </TouchableOpacity>
+        <Text style={styles.detailTitle}>分类管理</Text>
+        <TouchableOpacity onPress={() => {
+          setEditingCategory(null);
+          setCategoryForm({ name: '', icon: 'package', color: '#FF6B6B' });
+          setShowCategoryModal(true);
+        }}>
+          <Text style={styles.actionButton}>+ 添加</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={categories}
+        keyExtractor={item => item.id}
+        renderItem={({ item: category }) => {
+          const count = items.filter(i => i.categoryId === category.id).length;
+          return (
+            <View style={styles.manageItemCard}>
+              <View style={styles.manageItemLeft}>
+                <View style={[styles.manageItemIcon, { backgroundColor: category.color + '20' }]}>
+                  {React.createElement(getCategoryIconComponent(category.icon), { size: 24, color: category.color })}
+                </View>
+                <View>
+                  <Text style={styles.manageItemName}>{category.name}</Text>
+                  <Text style={styles.manageItemCount}>{count} 个物品</Text>
+                </View>
+              </View>
+              <View style={styles.manageItemActions}>
+                <TouchableOpacity
+                  style={styles.manageItemButton}
+                  onPress={() => handleEditCategory(category)}
+                >
+                  <Text style={styles.manageItemButtonText}>编辑</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.manageItemButton, styles.manageItemButtonDanger]}
+                  onPress={() => handleDeleteCategory(category)}
+                >
+                  <Text style={[styles.manageItemButtonText, styles.manageItemButtonTextDanger]}>删除</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>暂无分类</Text>
+          </View>
+        }
+      />
+    </View>
+  );
+
+  // 渲染标签管理页面
+  const renderTagManage = () => (
+    <View style={styles.detailContainer}>
+      <View style={styles.detailHeader}>
+        <TouchableOpacity onPress={() => setCurrentView('home')}>
+          <Text style={styles.backButton}>← 返回</Text>
+        </TouchableOpacity>
+        <Text style={styles.detailTitle}>标签管理</Text>
+        <TouchableOpacity onPress={() => {
+          setEditingTag(null);
+          setTagForm({ name: '', color: '#2563EB' });
+          setShowTagModal(true);
+        }}>
+          <Text style={styles.actionButton}>+ 添加</Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={tags}
+        keyExtractor={item => item.id}
+        renderItem={({ item: tag }) => (
+          <View style={styles.manageItemCard}>
+            <View style={styles.manageItemLeft}>
+              <View style={[styles.tagChip, { backgroundColor: tag.color + '20', borderColor: tag.color }]}>
+                <Text style={[styles.tagText, { color: tag.color }]}>{tag.name}</Text>
+              </View>
+              <Text style={styles.manageItemCount}>{tag.usageCount} 次使用</Text>
+            </View>
+            <View style={styles.manageItemActions}>
+              <TouchableOpacity
+                style={styles.manageItemButton}
+                onPress={() => handleEditTag(tag)}
+              >
+                <Text style={styles.manageItemButtonText}>编辑</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.manageItemButton, styles.manageItemButtonDanger]}
+                onPress={() => handleDeleteTag(tag)}
+              >
+                <Text style={[styles.manageItemButtonText, styles.manageItemButtonTextDanger]}>删除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>暂无标签</Text>
+          </View>
+        }
+      />
+    </View>
+  );
+
+  // 渲染过期预警列表
+  const renderExpiringList = () => {
+    const allExpiring = [...expiredItems, ...expiringItems];
+
+    return (
+      <View style={styles.detailContainer}>
+        <View style={styles.detailHeader}>
+          <TouchableOpacity onPress={() => setCurrentView('home')}>
+            <Text style={styles.backButton}>← 返回</Text>
+          </TouchableOpacity>
+          <Text style={styles.detailTitle}>过期预警</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.expiringSummary}>
+          <View style={[styles.expiringSummaryItem, { backgroundColor: '#FEE2E2' }]}>
+            <Text style={[styles.expiringSummaryNumber, { color: '#DC2626' }]}>{expiredItems.length}</Text>
+            <Text style={styles.expiringSummaryLabel}>已过期</Text>
+          </View>
+          <View style={[styles.expiringSummaryItem, { backgroundColor: '#FEF3C7' }]}>
+            <Text style={[styles.expiringSummaryNumber, { color: '#D97706' }]}>{expiringItems.length}</Text>
+            <Text style={styles.expiringSummaryLabel}>即将过期</Text>
+          </View>
+        </View>
+
+        <FlatList
+          data={allExpiring}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => {
+            const category = getCategory(item.categoryId);
+            const space = spaces.find(s => s.id === item.spaceId);
+            const daysUntilExpiry = item.expiryDate ? getDaysUntilExpiry(item.expiryDate) : null;
+            const isExpired = daysUntilExpiry !== null && daysUntilExpiry < 0;
+
+            return (
+              <TouchableOpacity
+                style={[styles.expiringItemCard, isExpired && styles.expiringItemCardExpired]}
+                onPress={() => setShowItemDetail(item)}
+              >
+                <View style={styles.expiringItemHeader}>
+                  <View style={styles.expiringItemInfo}>
+                    <Text style={styles.expiringItemName}>{item.name}</Text>
+                    <Text style={styles.expiringItemMeta}>
+                      {category?.name} · {space?.name}
+                    </Text>
+                  </View>
+                  <View style={[styles.expiringBadge, isExpired ? styles.expiringBadgeExpired : styles.expiringBadgeWarning]}>
+                    <Text style={styles.expiringBadgeText}>
+                      {isExpired ? `已过期 ${Math.abs(daysUntilExpiry!)} 天` : `${daysUntilExpiry} 天后过期`}
+                    </Text>
+                  </View>
+                </View>
+                {item.expiryDate && (
+                  <Text style={styles.expiringItemDate}>
+                    保质期至: {formatDate(item.expiryDate)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>暂无过期或即将过期物品</Text>
+              <Text style={styles.emptySubtext}>所有物品都在保质期内</Text>
+            </View>
+          }
+        />
+      </View>
+    );
+  };
 
   // 渲染添加/编辑物品模态框
   const renderAddModal = () => (
@@ -1003,7 +1510,7 @@ export default function InventoryScreen() {
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>添加空间</Text>
-          
+
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>名称 *</Text>
             <TextInput
@@ -1030,7 +1537,7 @@ export default function InventoryScreen() {
                     styles.optionChipText,
                     spaceForm.parentId === null && styles.optionChipTextActive,
                   ]}>
-                    🏠 根目录
+                    根目录
                   </Text>
                 </TouchableOpacity>
                 {spaces.map(space => (
@@ -1081,6 +1588,151 @@ export default function InventoryScreen() {
       </View>
     </Modal>
   );
+
+  // 渲染分类管理模态框
+  const renderCategoryModal = () => {
+    const colorOptions = ['#FF6B6B', '#F38181', '#FCBAD3', '#AA96DA', '#4ECDC4', '#95E1D3', '#FFE66D', '#FF8B94', '#C7CEEA', '#B4A7D6', '#A8D8EA', '#CCCCCC'];
+    const iconOptions = ['clothing', 'food', 'beauty', 'medicine', 'electronics', 'books', 'homeGoods', 'sports', 'toys', 'collections', 'tools', 'package'];
+
+    return (
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setShowCategoryModal(false); setEditingCategory(null); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{editingCategory ? '编辑分类' : '添加分类'}</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>名称 *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="分类名称"
+                value={categoryForm.name}
+                onChangeText={text => setCategoryForm({ ...categoryForm, name: text })}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>图标</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
+                  {iconOptions.map(icon => (
+                    <TouchableOpacity
+                      key={icon}
+                      style={[
+                        styles.iconOption,
+                        categoryForm.icon === icon && styles.iconOptionActive,
+                      ]}
+                      onPress={() => setCategoryForm({ ...categoryForm, icon })}
+                    >
+                      {React.createElement(getCategoryIconComponent(icon), { size: 24, color: categoryForm.color })}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>颜色</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
+                  {colorOptions.map(color => (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        categoryForm.color === color && styles.colorOptionActive,
+                      ]}
+                      onPress={() => setCategoryForm({ ...categoryForm, color })}
+                    />
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => { setShowCategoryModal(false); setEditingCategory(null); }}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveCategory}>
+                <Text style={styles.modalButtonConfirmText}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  // 渲染标签管理模态框
+  const renderTagModal = () => {
+    const colorOptions = ['#DC2626', '#2563EB', '#059669', '#737373', '#000000', '#D97706', '#7C3AED', '#DB2777', '#0891B2', '#65A30D'];
+
+    return (
+      <Modal
+        visible={showTagModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setShowTagModal(false); setEditingTag(null); }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{editingTag ? '编辑标签' : '添加标签'}</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>名称 *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="标签名称"
+                value={tagForm.name}
+                onChangeText={text => setTagForm({ ...tagForm, name: text })}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>颜色</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
+                  {colorOptions.map(color => (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        tagForm.color === color && styles.colorOptionActive,
+                      ]}
+                      onPress={() => setTagForm({ ...tagForm, color })}
+                    />
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => { setShowTagModal(false); setEditingTag(null); }}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveTag}>
+                <Text style={styles.modalButtonConfirmText}>保存</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   // 渲染物品详情模态框
   const renderItemDetailModal = () => {
@@ -1295,11 +1947,16 @@ export default function InventoryScreen() {
         {currentView === 'category' && renderCategoryDetail()}
         {currentView === 'search' && renderSearchResults()}
         {currentView === 'stats' && renderStats()}
+        {currentView === 'categoryManage' && renderCategoryManage()}
+        {currentView === 'tagManage' && renderTagManage()}
+        {currentView === 'expiring' && renderExpiringList()}
       </View>
 
       {/* 模态框 */}
       {renderAddModal()}
       {renderSpaceModal()}
+      {renderCategoryModal()}
+      {renderTagModal()}
       {renderItemDetailModal()}
     </SafeAreaView>
   );
@@ -1469,12 +2126,12 @@ const styles = StyleSheet.create({
   },
   
   // 分类
-  categorySection: {
+categorySection: {
     marginBottom: 24,
+    paddingHorizontal: 20,
   },
   categoryList: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
     gap: 10,
   },
   categoryChip: {
@@ -1590,6 +2247,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#D97706',
     fontWeight: '500',
+  },
+
+  // 左滑操作
+  swipeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  swipeAction: {
+    width: 70,
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  swipeActionEdit: {
+    backgroundColor: Colors.primary,
+  },
+  swipeActionDelete: {
+    backgroundColor: Colors.error,
+  },
+  swipeActionText: {
+    color: Colors.background,
+    fontSize: 14,
+    fontWeight: '600',
   },
   
   // 空状态
@@ -2030,5 +2713,196 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.text,
     lineHeight: 22,
+  },
+
+  // 管理卡片
+  manageGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  manageCard: {
+    flex: 1,
+    backgroundColor: Colors.gray[50],
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  manageCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  manageCardIconText: {
+    fontSize: 24,
+    fontWeight: '600',
+  },
+  manageCardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  manageCardCount: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+
+  // 管理列表项
+  manageItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  manageItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  manageItemIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  manageItemName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.text,
+    marginBottom: 2,
+  },
+  manageItemCount: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  manageItemActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  manageItemButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: Colors.background,
+    borderRadius: 6,
+  },
+  manageItemButtonDanger: {
+    backgroundColor: '#FEE2E2',
+  },
+  manageItemButtonText: {
+    fontSize: 13,
+    color: Colors.primary,
+    fontWeight: '500',
+  },
+  manageItemButtonTextDanger: {
+    color: Colors.error,
+  },
+
+  // 图标和颜色选项
+  iconOption: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: Colors.gray[50],
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  iconOptionActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '10',
+  },
+  colorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorOptionActive: {
+    borderColor: Colors.text,
+    transform: [{ scale: 1.1 }],
+  },
+
+  // 过期预警
+  expiringSummary: {
+    flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  expiringSummaryItem: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+  },
+  expiringSummaryNumber: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  expiringSummaryLabel: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  expiringItemCard: {
+    backgroundColor: Colors.gray[50],
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  expiringItemCardExpired: {
+    borderLeftColor: '#DC2626',
+  },
+  expiringItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  expiringItemInfo: {
+    flex: 1,
+  },
+  expiringItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  expiringItemMeta: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  expiringBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  expiringBadgeExpired: {
+    backgroundColor: '#FEE2E2',
+  },
+  expiringBadgeWarning: {
+    backgroundColor: '#FEF3C7',
+  },
+  expiringBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.text,
+  },
+  expiringItemDate: {
+    fontSize: 13,
+    color: Colors.textMuted,
   },
 });

@@ -77,18 +77,50 @@ export interface HabitStats {
   monthlyStats: number[];
 }
 
+// 自定义心情
+export interface CustomMood {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  intensity: number; // 1-5 级
+}
+
+// 日记编辑历史
+export interface DiaryEditHistory {
+  id: string;
+  editedAt: string;
+  content: string;
+  mood?: string;
+  tags?: string[];
+  reason?: string;
+}
+
+// 心情分析数据
+export interface MoodAnalysis {
+  weeklyPattern: Record<string, number>; // 周几的心情分布
+  tagCorrelation: Record<string, Record<string, number>>; // 标签与心情的关联
+  lowMoodStreak: number; // 连续低落天数
+  lastLowMoodDate?: string;
+}
+
 // 日记类型
 export interface DiaryEntry {
   id: string;
   date: string;
   content: string;
   mood?: 'sunny' | 'cloudy' | 'rainy' | 'storm' | 'moon' | 'star';
+  customMoodId?: string; // 自定义心情ID
+  moodIntensity?: number; // 心情强度 1-5
   tags?: string[];
   images?: string[];
   weather?: {
     type: string;
     temp: number;
     description: string;
+    icon?: string;
+    humidity?: number;
+    windSpeed?: number;
   };
   location?: {
     name: string;
@@ -96,6 +128,8 @@ export interface DiaryEntry {
     longitude?: number;
   };
   wordCount: number;
+  isMarkdown?: boolean;
+  editHistory?: DiaryEditHistory[];
   createdAt: string;
   updatedAt?: string;
 }

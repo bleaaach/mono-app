@@ -21,9 +21,26 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function AppNavigator() {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator 
+        screenOptions={{ 
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 250,
+          gestureEnabled: true,
+          gestureDirection: 'horizontal',
+          contentStyle: { backgroundColor: '#FFFFFF' },
+        }}
+      >
         <Stack.Screen name="Main" component={BottomTabs} />
-        <Stack.Screen name="Share" component={ShareScreen} />
+        <Stack.Screen 
+          name="Share" 
+          component={ShareScreen} 
+          options={{
+            animation: 'slide_from_bottom',
+            gestureEnabled: true,
+            gestureDirection: 'vertical',
+          }}
+        />
         <Stack.Screen name="RandomWalk" component={RandomWalkScreen} />
         <Stack.Screen name="BookView" component={BookViewScreen} />
       </Stack.Navigator>

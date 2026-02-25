@@ -88,7 +88,7 @@ export async function scheduleHabitReminder(habit: Habit): Promise<string | null
     const identifier = await Notifications.scheduleNotificationAsync({
       content: {
         title: '习惯提醒',
-        body: `该打卡「${habit.name}」了！坚持就是胜利 💪`,
+        body: `该打卡「${habit.name}」了！坚持就是胜利`,
         sound: 'default',
         badge: 1,
         data: { habitId: habit.id },

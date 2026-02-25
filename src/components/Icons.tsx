@@ -1,9 +1,12 @@
 import React from 'react';
 import Svg, { Circle, Path, Rect, Line, G, Polygon, Ellipse } from 'react-native-svg';
 
+import { ViewStyle } from 'react-native';
+
 type IconProps = {
   size?: number;
   color?: string;
+  style?: ViewStyle;
 };
 
 export const HealthIcon = ({ size = 24, color = "#000000" }: IconProps) => (
@@ -953,6 +956,63 @@ export const PackageIcon = ({ size = 24, color = "#000000" }: IconProps) => (
   </Svg>
 );
 
+// ==================== 日记相关图标 ====================
+
+export const DiaryIcon = ({ size = 24, color = "#000000" }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path d="M14 2v6h6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    <Line x1="8" y1="13" x2="16" y2="13" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    <Line x1="8" y1="17" x2="13" y2="17" stroke={color} strokeWidth={2} strokeLinecap="round" />
+  </Svg>
+);
+
+// 心情图标 - 开心
+export const HappyIcon = ({ size = 24, color = "#000000" }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={2} />
+    <Circle cx="9" cy="10" r="1.5" fill={color} />
+    <Circle cx="15" cy="10" r="1.5" fill={color} />
+    <Path
+      d="M8 14c.5 2 2 3 4 3s3.5-1 4-3"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
+// 心情图标 - 平静
+export const NeutralIcon = ({ size = 24, color = "#000000" }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={2} />
+    <Circle cx="9" cy="10" r="1.5" fill={color} />
+    <Circle cx="15" cy="10" r="1.5" fill={color} />
+    <Line x1="9" y1="15" x2="15" y2="15" stroke={color} strokeWidth={2} strokeLinecap="round" />
+  </Svg>
+);
+
+// 心情图标 - 难过
+export const SadIcon = ({ size = 24, color = "#000000" }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={2} />
+    <Circle cx="9" cy="10" r="1.5" fill={color} />
+    <Circle cx="15" cy="10" r="1.5" fill={color} />
+    <Path
+      d="M8 16c.5-2 2-3 4-3s3.5 1 4 3"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+    />
+  </Svg>
+);
+
 const IconMap: { [key: string]: React.FC<IconProps> } = {
   'health': HealthIcon,
   'study': StudyIcon,
@@ -1017,6 +1077,10 @@ const IconMap: { [key: string]: React.FC<IconProps> } = {
   'collections': CollectionsIcon,
   'tools': ToolsIcon,
   'package': PackageIcon,
+  'diary': DiaryIcon,
+  'happy': HappyIcon,
+  'neutral': NeutralIcon,
+  'sad': SadIcon,
 };
 
 export const getIconComponent = (iconName: string): React.FC<IconProps> | null => {

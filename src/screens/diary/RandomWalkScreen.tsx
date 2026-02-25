@@ -20,6 +20,9 @@ import {
   StormMoodIcon,
   PeacefulMoodIcon,
   SparkleIcon,
+  DiaryIcon,
+  SparkleIcon as SparkleIconAlt,
+  RestIcon,
 } from '../../components/Icons';
 
 const { width, height } = Dimensions.get('window');
@@ -236,11 +239,11 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
   const getSpecialModeText = () => {
     switch (specialMode) {
       case 'today':
-        return '📅 历史上的今天';
+        return '历史上的今天';
       case 'mood':
-        return '💫 相似心情';
+        return '相似心情';
       case 'capsule':
-        return '⏰ 时光胶囊';
+        return '时光胶囊';
       default:
         return '';
     }
@@ -257,7 +260,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>📝</Text>
+          <DiaryIcon size={48} color="#D1D5DB" />
           <Text style={styles.emptyText}>还没有日记</Text>
           <Text style={styles.emptySubtext}>先写几篇日记再来漫游吧</Text>
         </View>
@@ -424,7 +427,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
             getRandomEntry(entries, config, 'today');
           }}
         >
-          <Text style={styles.modeBtnText}>📅</Text>
+          <RestIcon size={20} color={specialMode === 'today' ? '#FFFFFF' : '#333333'} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeBtn, specialMode === 'mood' && styles.modeBtnActive]}
@@ -433,7 +436,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
             getRandomEntry(entries, config, 'mood');
           }}
         >
-          <Text style={styles.modeBtnText}>💫</Text>
+          <SparkleIconAlt size={20} color={specialMode === 'mood' ? '#FFFFFF' : '#333333'} />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.modeBtn, specialMode === 'capsule' && styles.modeBtnActive]}
@@ -442,7 +445,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
             getRandomEntry(entries, config, 'capsule');
           }}
         >
-          <Text style={styles.modeBtnText}>⏰</Text>
+          <RestIcon size={20} color={specialMode === 'capsule' ? '#FFFFFF' : '#333333'} />
         </TouchableOpacity>
       </View>
     </SafeAreaView>

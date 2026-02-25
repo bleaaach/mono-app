@@ -25,7 +25,7 @@ const MOOD_SYMBOLS: Record<string, string> = {
   rainy: '◑',
   storm: '●',
   peaceful: '◇',
-  sparkle: '✦',
+  sparkle: '*',
 };
 
 interface Bookmark {

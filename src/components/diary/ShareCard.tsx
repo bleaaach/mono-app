@@ -112,7 +112,7 @@ export default function ShareCard({ entry, template, caption }: ShareCardProps) 
       <View style={styles.natureFooter}>
         {entry.tags?.map((tag, i) => (
           <View key={i} style={styles.natureTag}>
-            <Text style={styles.natureTagText}>🌿 {tag}</Text>
+            <Text style={styles.natureTagText}># {tag}</Text>
           </View>
         ))}
       </View>

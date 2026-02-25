@@ -33,6 +33,10 @@ import {
   MusicIcon,
   MuscleIcon,
   CheckIcon,
+  CloseIcon,
+  DiaryIcon,
+  StarIcon,
+  BulbIcon,
 } from '../components/Icons';
 
 const { width } = Dimensions.get('window');
@@ -667,7 +671,7 @@ export default function TimeScreen() {
                       onPress={() => linkTodoToActivity(todo.id)}
                     >
                       <View style={[styles.linkCheckbox, isLinked && styles.linkCheckboxActive]}>
-                        {isLinked && <Text style={styles.linkCheckboxCheck}>✓</Text>}
+                        {isLinked && <CheckIcon size={14} color="#FFFFFF" />}
                       </View>
                       <Text style={[styles.linkItemText, isLinked && styles.linkItemTextActive]}>
                         {todo.title}
@@ -700,9 +704,10 @@ export default function TimeScreen() {
                       ]}
                       onPress={() => linkHabitToActivity(habit.id)}
                     >
-                      <Text style={styles.habitLinkChipText}>
-                        {isCompleted ? '✓ ' : ''}{habit.name}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isCompleted && <View style={{ marginRight: 4 }}><CheckIcon size={12} color="#FFFFFF" /></View>}
+                        <Text style={styles.habitLinkChipText}>{habit.name}</Text>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -767,7 +772,10 @@ export default function TimeScreen() {
             style={styles.goalsCard}
             onPress={() => setShowGoalModal(true)}
           >
-            <Text style={styles.goalsCardTitle}>🎯 每日目标</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <BulbIcon size={18} color={Colors.primary} />
+              <Text style={[styles.goalsCardTitle, { marginLeft: 8 }]}>每日目标</Text>
+            </View>
             <Text style={styles.goalsCardSubtitle}>
               {goals.length > 0 ? `已设置 ${goals.length} 个目标` : '点击设置每日时间目标'}
             </Text>
@@ -917,9 +925,12 @@ export default function TimeScreen() {
                         </View>
                         <Text style={styles.goalName}>{activity.name}</Text>
                       </View>
-                      <Text style={[styles.goalProgress, isCompleted && styles.goalProgressCompleted]}>
-                        {isCompleted ? '✓ ' : ''}{Math.round(totalMinutes)}/{goal.targetDuration}分钟
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isCompleted && <View style={{ marginRight: 4 }}><CheckIcon size={12} color="#059669" /></View>}
+                        <Text style={[styles.goalProgress, isCompleted && styles.goalProgressCompleted]}>
+                          {Math.round(totalMinutes)}/{goal.targetDuration}分钟
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.goalProgressBg}>
                       <View 
@@ -1030,7 +1041,7 @@ export default function TimeScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={() => setShowTimelineView(false)}>
-            <Text style={styles.timelineCloseBtn}>✕</Text>
+            <CloseIcon size={24} color={Colors.gray[500]} />
           </TouchableOpacity>
         </View>
 
@@ -1164,7 +1175,10 @@ export default function TimeScreen() {
                 <Text style={styles.historyActivity}>{item.activityName}</Text>
                 <Text style={styles.historyTime}>{item.startTime} - {item.endTime}</Text>
                 {item.note ? (
-                  <Text style={styles.historyNote} numberOfLines={1}>📝 {item.note}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                    <DiaryIcon size={12} color={Colors.gray[500]} />
+                    <Text style={[styles.historyNote, { marginLeft: 4 }]} numberOfLines={1}>{item.note}</Text>
+                  </View>
                 ) : null}
                 {(item.linkedTodos?.length || item.linkedHabits?.length) ? (
                   <View style={styles.historyLinks}>
@@ -1172,7 +1186,7 @@ export default function TimeScreen() {
                       const todo = todos.find(t => t.id === todoId);
                       return todo ? (
                         <View key={todoId} style={styles.historyLinkTagTodo}>
-                          <Text style={styles.historyLinkTagText}>📋 {todo.title}</Text>
+                          <Text style={styles.historyLinkTagText}>{todo.title}</Text>
                         </View>
                       ) : null;
                     })}
@@ -1180,7 +1194,7 @@ export default function TimeScreen() {
                       const habit = habits.find(h => h.id === habitId);
                       return habit ? (
                         <View key={habitId} style={styles.historyLinkTagHabit}>
-                          <Text style={styles.historyLinkTagText}>🎯 {habit.name}</Text>
+                          <Text style={styles.historyLinkTagText}>{habit.name}</Text>
                         </View>
                       ) : null;
                     })}

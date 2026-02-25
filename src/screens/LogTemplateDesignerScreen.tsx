@@ -64,7 +64,7 @@ export default function LogTemplateDesignerScreen() {
           name: '新模板',
           description: '',
           color: '#000000',
-          icon: '📝',
+          icon: 'write',
           fields: [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -183,7 +183,7 @@ export default function LogTemplateDesignerScreen() {
             style={styles.input}
             value={template.icon}
             onChangeText={(text) => updateTemplateInfo('icon', text)}
-            placeholder="📝"
+            placeholder="write"
             placeholderTextColor="#999999"
           />
         </View>

@@ -165,7 +165,7 @@ export default function LifeLogHomeScreen() {
       name: newCategoryName.trim(),
       description: newCategoryDesc.trim() || undefined,
       color: '#000000',
-      icon: '📝',
+      icon: 'write',
       fields: [
         { id: 'title', name: '标题', type: 'text', required: true, placeholder: '输入标题' },
         { id: 'content', name: '内容', type: 'multiline', required: false, placeholder: '详细描述...' },

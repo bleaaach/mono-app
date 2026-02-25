@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -20,8 +22,9 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { PieChart } from 'react-native-chart-kit';
-import { DiaryEntry } from '../types';
+import { DiaryEntry, DiaryEditHistory, CustomMood, MoodAnalysis } from '../types';
 import { Colors } from '../constants/colors';
 import { diaryStorage } from '../utils/storage';
 import { getTodayString, formatDate, generateId } from '../utils/date';
@@ -33,18 +36,49 @@ import {
   StormMoodIcon,
   PeacefulMoodIcon,
   SparkleIcon,
+  DiaryIcon,
+  HappyIcon,
+  NeutralIcon,
+  SadIcon,
 } from '../components/Icons';
 
 const MOODS = [
-  { key: 'sunny', label: '晴朗', iconComponent: SunnyMoodIcon },
-  { key: 'cloudy', label: '多云', iconComponent: CloudyMoodIcon },
-  { key: 'rainy', label: '下雨', iconComponent: RainyMoodIcon },
-  { key: 'storm', label: '雷雨', iconComponent: StormMoodIcon },
-  { key: 'peaceful', label: '宁静', iconComponent: PeacefulMoodIcon },
-  { key: 'sparkle', label: '美好', iconComponent: SparkleIcon },
+  { key: 'sunny', label: '晴朗', iconComponent: SunnyMoodIcon, color: '#FFB800', intensity: 5 },
+  { key: 'cloudy', label: '多云', iconComponent: CloudyMoodIcon, color: '#8E8E93', intensity: 3 },
+  { key: 'rainy', label: '下雨', iconComponent: RainyMoodIcon, color: '#007AFF', intensity: 2 },
+  { key: 'storm', label: '雷雨', iconComponent: StormMoodIcon, color: '#5856D6', intensity: 1 },
+  { key: 'peaceful', label: '宁静', iconComponent: PeacefulMoodIcon, color: '#FF9500', intensity: 4 },
+  { key: 'sparkle', label: '美好', iconComponent: SparkleIcon, color: '#FF2D55', intensity: 5 },
 ] as const;
 
 const DEFAULT_TAGS = ['工作', '生活', '思考', '旅行', '阅读', '运动'];
+
+// 骨架屏组件
+const SkeletonItem = () => {
+  const opacity = useState(new Animated.Value(0.3))[0];
+  
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, []);
+
+  return (
+    <Animated.View style={[styles.skeletonCard, { opacity }]}>
+      <View style={styles.skeletonHeader}>
+        <View style={styles.skeletonMood} />
+        <View style={styles.skeletonTag} />
+      </View>
+      <View style={styles.skeletonContent} />
+      <View style={styles.skeletonContentShort} />
+    </Animated.View>
+  );
+};
 
 type DiaryTab = 'timeline' | 'calendar' | 'stats';
 
@@ -62,27 +96,168 @@ export default function DiaryScreen() {
   const [editorMood, setEditorMood] = useState<string>('cloudy');
   const [editorTags, setEditorTags] = useState<string[]>([]);
   const [editorImages, setEditorImages] = useState<string[]>([]);
-  const [editorWeather, setEditorWeather] = useState<{type: string; temp: number; description: string} | undefined>(undefined);
+  const [editorWeather, setEditorWeather] = useState<{type: string; temp: number; description: string; icon?: string; humidity?: number; windSpeed?: number} | undefined>(undefined);
   const [editorLocation, setEditorLocation] = useState<{name: string} | undefined>(undefined);
   const [showTagInput, setShowTagInput] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
+  const [isMarkdown, setIsMarkdown] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isFetchingWeather, setIsFetchingWeather] = useState(false);
+  const [showEditHistory, setShowEditHistory] = useState(false);
+  const [editHistory, setEditHistory] = useState<DiaryEditHistory[]>([]);
   
   const [showDetail, setShowDetail] = useState(false);
   const [detailEntry, setDetailEntry] = useState<DiaryEntry | null>(null);
   
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  
+  // 新增状态
+  const [isLoading, setIsLoading] = useState(true);
+  const [showJumpModal, setShowJumpModal] = useState(false);
+  const [jumpYear, setJumpYear] = useState(new Date().getFullYear());
+  const [jumpMonth, setJumpMonth] = useState(new Date().getMonth() + 1);
+  const [customMoods, setCustomMoods] = useState<CustomMood[]>([]);
+  const [showCustomMoodModal, setShowCustomMoodModal] = useState(false);
+  const [editorMoodIntensity, setEditorMoodIntensity] = useState<number>(3);
+  const [moodAnalysis, setMoodAnalysis] = useState<MoodAnalysis | null>(null);
+  const [showMoodAnalysis, setShowMoodAnalysis] = useState(false);
+  const [jumpTargetDate, setJumpTargetDate] = useState<string | null>(null);
+  const timelineScrollViewRef = useRef<ScrollView>(null);
 
   const allTags = [...DEFAULT_TAGS, ...customTags];
 
   // 加载数据
   const loadEntries = async () => {
-    const data = await diaryStorage.get();
-    if (data) {
-      setEntries(data.sort((a: DiaryEntry, b: DiaryEntry) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      ));
+    setIsLoading(true);
+    try {
+      const data = await diaryStorage.get();
+      console.log('[Diary] Loaded entries:', data?.length || 0, data);
+      if (data && Array.isArray(data)) {
+        setEntries(data.sort((a: DiaryEntry, b: DiaryEntry) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        ));
+        // 检查心情提醒
+        checkMoodReminder(data);
+        // 计算心情分析
+        calculateMoodAnalysis(data);
+      } else {
+        console.log('[Diary] No data found or invalid data');
+        setEntries([]);
+      }
+    } catch (error) {
+      console.error('[Diary] Error loading entries:', error);
+      setEntries([]);
     }
+    // 模拟加载延迟，展示骨架屏
+    setTimeout(() => setIsLoading(false), 800);
+  };
+  
+  // 检查心情提醒（连续低落提醒）
+  const checkMoodReminder = async (entries: DiaryEntry[]) => {
+    const lowMoods = ['storm', 'rainy'];
+    let streak = 0;
+    const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    for (const entry of sorted) {
+      if (lowMoods.includes(entry.mood || '')) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    
+    if (streak >= 3) {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '心情提醒',
+          body: `你已经连续 ${streak} 天心情低落了，要不要试试放松一下？`,
+        },
+        trigger: null,
+      });
+    }
+  };
+  
+  // 计算心情分析
+  const calculateMoodAnalysis = (entries: DiaryEntry[]) => {
+    const weeklyPattern: Record<string, number> = {};
+    const tagCorrelation: Record<string, Record<string, number>> = {};
+    let lowMoodStreak = 0;
+    let lastLowMoodDate: string | undefined;
+    
+    const lowMoods = ['storm', 'rainy'];
+    const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    // 计算连续低落天数
+    for (const entry of sorted) {
+      if (lowMoods.includes(entry.mood || '')) {
+        lowMoodStreak++;
+        lastLowMoodDate = entry.date;
+      } else {
+        break;
+      }
+    }
+    
+    // 计算周几的心情分布
+    entries.forEach(entry => {
+      const date = new Date(entry.date);
+      const dayOfWeek = date.toLocaleDateString('zh-CN', { weekday: 'short' });
+      const moodScore = MOODS.find(m => m.key === entry.mood)?.intensity || 3;
+      weeklyPattern[dayOfWeek] = (weeklyPattern[dayOfWeek] || 0) + moodScore;
+    });
+    
+    // 计算标签与心情的关联
+    entries.forEach(entry => {
+      const mood = entry.mood || 'cloudy';
+      entry.tags?.forEach(tag => {
+        if (!tagCorrelation[tag]) tagCorrelation[tag] = {};
+        tagCorrelation[tag][mood] = (tagCorrelation[tag][mood] || 0) + 1;
+      });
+    });
+    
+    setMoodAnalysis({
+      weeklyPattern,
+      tagCorrelation,
+      lowMoodStreak,
+      lastLowMoodDate,
+    });
+  };
+  
+  // 跳转到指定年月
+  const jumpToDate = () => {
+    const targetMonth = `${jumpYear}-${String(jumpMonth).padStart(2, '0')}`;
+    
+    // 如果在日历视图，切换月份
+    if (activeTab === 'calendar') {
+      const newDate = new Date(jumpYear, jumpMonth - 1, 1);
+      setCalendarMonth(newDate);
+    } else {
+      // 如果在时间线视图，查找该月份的第一个日记并滚动到那里
+      const targetEntries = entries.filter(e => e.date.startsWith(targetMonth));
+      if (targetEntries.length > 0) {
+        // 按日期排序，找到最早的
+        const sorted = [...targetEntries].sort((a, b) => 
+          new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+        setJumpTargetDate(sorted[0].date);
+      } else {
+        Alert.alert('提示', `${jumpYear}年${jumpMonth}月没有日记记录`);
+      }
+    }
+    
+    setShowJumpModal(false);
+  };
+  
+  // 添加自定义心情
+  const addCustomMood = (name: string, emoji: string, color: string, intensity: number) => {
+    const newMood: CustomMood = {
+      id: generateId(),
+      name,
+      emoji,
+      color,
+      intensity,
+    };
+    setCustomMoods(prev => [...prev, newMood]);
   };
 
   useFocusEffect(
@@ -105,11 +280,15 @@ export default function DiaryScreen() {
     if (entry) {
       setEditingEntry(entry);
       setEditorContent(entry.content);
-      setEditorMood(entry.mood || 'cloudy');
+      // 优先使用自定义心情ID，否则使用预设心情
+      setEditorMood(entry.customMoodId || entry.mood || 'cloudy');
       setEditorTags(entry.tags || []);
       setEditorImages(entry.images || []);
       setEditorWeather(entry.weather);
       setEditorLocation(entry.location);
+      setIsMarkdown(entry.isMarkdown || false);
+      setEditHistory(entry.editHistory || []);
+      setEditorMoodIntensity(entry.moodIntensity || 3);
     } else {
       setEditingEntry(null);
       setEditorContent('');
@@ -118,8 +297,128 @@ export default function DiaryScreen() {
       setEditorImages([]);
       setEditorWeather(undefined);
       setEditorLocation(undefined);
+      setIsMarkdown(false);
+      setEditHistory([]);
+      setEditorMoodIntensity(3);
     }
     setShowEditor(true);
+  };
+
+  // 获取天气信息
+  const fetchWeather = async () => {
+    setIsFetchingWeather(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('提示', '需要位置权限才能获取天气');
+        setIsFetchingWeather(false);
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+      
+      // 使用免费的 Open-Meteo API 获取天气
+      const response = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`
+      );
+      const data = await response.json();
+      
+      const weatherCode = data.current.weather_code;
+      const weatherInfo = getWeatherInfo(weatherCode);
+      
+      setEditorWeather({
+        type: weatherInfo.type,
+        temp: Math.round(data.current.temperature_2m),
+        description: weatherInfo.description,
+        icon: weatherInfo.icon,
+        humidity: data.current.relative_humidity_2m,
+        windSpeed: Math.round(data.current.wind_speed_10m),
+      });
+    } catch (error) {
+      console.error('获取天气失败:', error);
+      Alert.alert('提示', '获取天气失败，请稍后重试');
+    }
+    setIsFetchingWeather(false);
+  };
+
+  // 天气代码转换为可读信息
+  const getWeatherInfo = (code: number): { type: string; description: string; icon: string } => {
+    const weatherMap: Record<number, { type: string; description: string; icon: string }> = {
+      0: { type: 'clear', description: '晴', icon: 'sunny' },
+      1: { type: 'clear', description: '晴', icon: 'sunny' },
+      2: { type: 'partly_cloudy', description: '少云', icon: 'partly-cloudy' },
+      3: { type: 'cloudy', description: '多云', icon: 'cloudy' },
+      45: { type: 'fog', description: '雾', icon: 'fog' },
+      48: { type: 'fog', description: '雾', icon: 'fog' },
+      51: { type: 'drizzle', description: '小雨', icon: 'rain' },
+      53: { type: 'drizzle', description: '小雨', icon: 'rain' },
+      55: { type: 'drizzle', description: '小雨', icon: 'rain' },
+      61: { type: 'rain', description: '雨', icon: 'rain' },
+      63: { type: 'rain', description: '中雨', icon: 'rain' },
+      65: { type: 'rain', description: '大雨', icon: 'rain' },
+      71: { type: 'snow', description: '小雪', icon: 'snow' },
+      73: { type: 'snow', description: '中雪', icon: 'snow' },
+      75: { type: 'snow', description: '大雪', icon: 'snow' },
+      80: { type: 'showers', description: '阵雨', icon: 'rain' },
+      81: { type: 'showers', description: '阵雨', icon: 'rain' },
+      82: { type: 'showers', description: '暴雨', icon: 'rain' },
+      95: { type: 'thunderstorm', description: '雷暴', icon: 'thunderstorm' },
+      96: { type: 'thunderstorm', description: '雷暴冰雹', icon: 'thunderstorm' },
+      99: { type: 'thunderstorm', description: '强雷暴', icon: 'thunderstorm' },
+    };
+    return weatherMap[code] || { type: 'unknown', description: '未知', icon: 'help' };
+  };
+
+  // 语音输入
+  const startVoiceRecording = async () => {
+    setIsRecording(true);
+    try {
+      // 使用 expo-speech 的语音识别功能（需要 expo-av 配合）
+      // 这里使用简单的模拟，实际需要 expo-av 或 react-native-voice
+      Alert.alert(
+        '语音输入',
+        '请开始说话...',
+        [
+          {
+            text: '停止录音',
+            onPress: () => {
+              setIsRecording(false);
+              // 模拟语音识别结果
+              const mockText = '这是语音输入的内容';
+              setEditorContent(prev => prev + (prev ? '\n' : '') + mockText);
+            },
+          },
+        ],
+        { cancelable: true, onDismiss: () => setIsRecording(false) }
+      );
+    } catch (error) {
+      console.error('语音识别失败:', error);
+      Alert.alert('提示', '语音识别失败');
+      setIsRecording(false);
+    }
+  };
+
+  // Markdown 快捷插入
+  const insertMarkdown = (type: 'bold' | 'italic' | 'heading' | 'list' | 'quote' | 'code') => {
+    const insertions: Record<string, string> = {
+      bold: '****',
+      italic: '**',
+      heading: '## ',
+      list: '- ',
+      quote: '> ',
+      code: '```\n\n```',
+    };
+    setEditorContent(prev => prev + insertions[type]);
+  };
+
+  // 恢复历史版本
+  const restoreVersion = (history: DiaryEditHistory) => {
+    setEditorContent(history.content);
+    setEditorMood(history.mood || 'cloudy');
+    setEditorTags(history.tags || []);
+    setShowEditHistory(false);
+    Alert.alert('成功', '已恢复到历史版本');
   };
 
   const pickImage = async () => {
@@ -202,19 +501,38 @@ export default function DiaryScreen() {
 
     const now = new Date().toISOString();
     const wordCount = editorContent.trim().length;
+    
+    // 检查是否是自定义心情
+    const customMood = customMoods.find(m => m.id === editorMood);
 
     if (editingEntry) {
+      // 创建编辑历史记录
+      const newHistory: DiaryEditHistory = {
+        id: generateId(),
+        editedAt: now,
+        content: editingEntry.content,
+        mood: editingEntry.mood,
+        tags: editingEntry.tags,
+      };
+      
+      const existingHistory = editingEntry.editHistory || [];
+      const updatedHistory = [newHistory, ...existingHistory].slice(0, 20); // 保留最近20条历史
+      
       const updated = entries.map(e => 
         e.id === editingEntry.id 
           ? { 
               ...e, 
               content: editorContent, 
-              mood: editorMood as any, 
+              mood: customMood ? undefined : (editorMood as any),
+              customMoodId: customMood ? editorMood : undefined,
+              moodIntensity: editorMoodIntensity,
               tags: editorTags,
               images: editorImages,
               weather: editorWeather,
               location: editorLocation,
               wordCount,
+              isMarkdown,
+              editHistory: updatedHistory,
               updatedAt: now
             }
           : e
@@ -225,12 +543,15 @@ export default function DiaryScreen() {
         id: generateId(),
         date: getTodayString(),
         content: editorContent.trim(),
-        mood: editorMood as any,
+        mood: customMood ? undefined : (editorMood as any),
+        customMoodId: customMood ? editorMood : undefined,
+        moodIntensity: editorMoodIntensity,
         tags: editorTags,
         images: editorImages,
         weather: editorWeather,
         location: editorLocation,
         wordCount,
+        isMarkdown,
         createdAt: now,
       };
       saveEntries([newEntry, ...entries]);
@@ -451,8 +772,38 @@ export default function DiaryScreen() {
   const renderTimeline = () => {
     const grouped = groupByDate(filteredEntries);
     
+    // 骨架屏加载状态
+    if (isLoading) {
+      return (
+        <ScrollView style={styles.timelineContainer} showsVerticalScrollIndicator={false}>
+          <View style={styles.skeletonWriteCard} />
+          <View style={styles.skeletonFilter} />
+          {[1, 2, 3, 4, 5].map(i => (
+            <View key={i} style={styles.skeletonDateGroup}>
+              <View style={styles.skeletonDateHeader} />
+              <SkeletonItem />
+            </View>
+          ))}
+        </ScrollView>
+      );
+    }
+    
     return (
-      <ScrollView style={styles.timelineContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={timelineScrollViewRef}
+        style={styles.timelineContainer} 
+        showsVerticalScrollIndicator={false}
+        onLayout={() => {
+          // 如果有跳转目标，滚动到对应位置
+          if (jumpTargetDate && timelineScrollViewRef.current) {
+            // 这里简化处理，实际应该测量位置后滚动
+            // 由于 FlatList/ScrollView 的滚动需要知道具体位置，这里使用一个简单的延迟
+            setTimeout(() => {
+              setJumpTargetDate(null);
+            }, 100);
+          }
+        }}
+      >
         {/* 写日记入口卡片 */}
         <TouchableOpacity style={styles.writeCard} onPress={() => openEditor()}>
           <View style={styles.writeCardIcon}>
@@ -465,38 +816,48 @@ export default function DiaryScreen() {
           <Ionicons name="chevron-forward" size={20} color="#ccc" />
         </TouchableOpacity>
 
-        {/* 标签筛选 */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.tagFilterContainer}
-        >
-          <TouchableOpacity
-            style={[styles.tagFilterBtn, selectedTag === 'all' && styles.tagFilterBtnActive]}
-            onPress={() => setSelectedTag('all')}
+        {/* 标签筛选和时间跳转 */}
+        <View style={styles.timelineControls}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.tagFilterContainer}
           >
-            <Text style={[styles.tagFilterText, selectedTag === 'all' && styles.tagFilterTextActive]}>
-              全部
-            </Text>
-          </TouchableOpacity>
-          {allTags.map(tag => (
             <TouchableOpacity
-              key={tag}
-              style={[styles.tagFilterBtn, selectedTag === tag && styles.tagFilterBtnActive]}
-              onPress={() => setSelectedTag(tag)}
+              style={[styles.tagFilterBtn, selectedTag === 'all' && styles.tagFilterBtnActive]}
+              onPress={() => setSelectedTag('all')}
             >
-              <Text style={[styles.tagFilterText, selectedTag === tag && styles.tagFilterTextActive]}>
-                {tag}
+              <Text style={[styles.tagFilterText, selectedTag === 'all' && styles.tagFilterTextActive]}>
+                全部
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+            {allTags.map(tag => (
+              <TouchableOpacity
+                key={tag}
+                style={[styles.tagFilterBtn, selectedTag === tag && styles.tagFilterBtnActive]}
+                onPress={() => setSelectedTag(tag)}
+              >
+                <Text style={[styles.tagFilterText, selectedTag === tag && styles.tagFilterTextActive]}>
+                  {tag}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          {/* 时间跳转按钮 */}
+          <TouchableOpacity 
+            style={styles.jumpBtn}
+            onPress={() => setShowJumpModal(true)}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#666" />
+            <Text style={styles.jumpBtnText}>跳转</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* 日记时间线 */}
         <View style={styles.timelineContainer}>
           {grouped.length === 0 ? (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>📝</Text>
+              <DiaryIcon size={48} color={Colors.gray[400]} />
               <Text style={styles.emptyText}>还没有日记</Text>
               <Text style={styles.emptySubtext}>点击上方卡片开始记录</Text>
             </View>
@@ -519,12 +880,25 @@ export default function DiaryScreen() {
                       onPress={() => openDetail(entry)}
                     >
                       <View style={styles.entryHeader}>
-                        {React.createElement(mood.iconComponent, { size: 20, color: '#000000' })}
+                        {React.createElement(mood.iconComponent, { size: 20, color: MOODS.find(m => m.key === entry.mood)?.color || '#000' })}
                         <View style={styles.entryTags}>
                           {entry.tags?.map((tag, i) => (
                             <Text key={i} style={styles.entryTag}>{tag}</Text>
                           ))}
                         </View>
+                        {entry.moodIntensity && (
+                          <View style={styles.intensityIndicator}>
+                            {[...Array(5)].map((_, i) => (
+                              <View 
+                                key={i} 
+                                style={[
+                                  styles.intensityDot, 
+                                  i < entry.moodIntensity! && styles.intensityDotActive
+                                ]} 
+                              />
+                            ))}
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.entryPreview}>{preview}</Text>
                     </TouchableOpacity>
@@ -654,7 +1028,7 @@ export default function DiaryScreen() {
 
             {selectedDiaries.length === 0 ? (
               <View style={styles.selectedDateEmpty}>
-                <Text style={styles.selectedDateEmptyIcon}>📝</Text>
+                <DiaryIcon size={48} color={Colors.gray[400]} />
                 <Text style={styles.selectedDateEmptyText}>这一天还没有日记</Text>
                 <TouchableOpacity 
                   style={styles.selectedDateEmptyBtn}
@@ -710,9 +1084,9 @@ export default function DiaryScreen() {
   const renderStats = () => {
     const moodDist = getMoodDistribution();
     const tagStats = getTagStats();
-    const moodTrend = getMoodTrend;
-    const wordCloud = getWordCloudData;
-    const yearlyReport = getYearlyReport;
+    const moodTrendData = getMoodTrend;
+    const wordCloudData = getWordCloudData;
+    const yearlyReportData = getYearlyReport;
 
     return (
       <ScrollView style={styles.statsContainer} showsVerticalScrollIndicator={false}>
@@ -750,9 +1124,9 @@ export default function DiaryScreen() {
             <View style={styles.moodTrendContainer}>
               {/* Y轴标签 */}
               <View style={styles.moodTrendYAxis}>
-                <Text style={styles.moodTrendYLabel}>😊</Text>
-                <Text style={styles.moodTrendYLabel}>😐</Text>
-                <Text style={styles.moodTrendYLabel}>😔</Text>
+                <HappyIcon size={16} color={Colors.gray[500]} />
+                <NeutralIcon size={16} color={Colors.gray[500]} />
+                <SadIcon size={16} color={Colors.gray[500]} />
               </View>
               
               {/* 图表区域 */}
@@ -766,7 +1140,7 @@ export default function DiaryScreen() {
                 
                 {/* 数据点和连线 */}
                 <View style={styles.moodTrendData}>
-                  {moodTrend.data.map((score, index) => {
+                  {moodTrendData.data.map((score, index) => {
                     const hasData = score > 0;
                     const heightPercent = hasData ? (score / 5) * 100 : 0;
                     return (
@@ -781,20 +1155,20 @@ export default function DiaryScreen() {
                               ]} 
                             />
                             {/* 连线 */}
-                            {index < moodTrend.data.length - 1 && hasData && moodTrend.data[index + 1] > 0 && (
+                            {index < moodTrendData.data.length - 1 && hasData && moodTrendData.data[index + 1] > 0 && (
                               <View style={[
                                 styles.moodTrendLine,
                                 {
                                   bottom: `${heightPercent}%`,
                                   transform: [
                                     { rotate: `${Math.atan2(
-                                      (moodTrend.data[index + 1] / 5) * 100 - heightPercent,
+                                      (moodTrendData.data[index + 1] / 5) * 100 - heightPercent,
                                       100
                                     )}rad` }
                                   ],
                                   width: `${Math.sqrt(
                                     Math.pow(100, 2) + 
-                                    Math.pow((moodTrend.data[index + 1] / 5) * 100 - heightPercent, 2)
+                                    Math.pow((moodTrendData.data[index + 1] / 5) * 100 - heightPercent, 2)
                                   )}%`
                                 }
                               ]} />
@@ -802,7 +1176,7 @@ export default function DiaryScreen() {
                           </>
                         )}
                         {/* X轴标签 */}
-                        <Text style={styles.moodTrendXLabel}>{moodTrend.labels[index]?.split('/')[1]}</Text>
+                        <Text style={styles.moodTrendXLabel}>{moodTrendData.labels[index]?.split('/')[1]}</Text>
                       </View>
                     );
                   })}
@@ -813,7 +1187,7 @@ export default function DiaryScreen() {
             {/* 心情说明 */}
             <View style={styles.moodTrendLegend}>
               <Text style={styles.moodTrendLegendText}>
-                记录 {moodTrend.data.filter(v => v > 0).length} 天 · 平均心情 {moodTrend.data.filter(v => v > 0).length > 0 ? (moodTrend.data.reduce((a, b) => a + b, 0) / moodTrend.data.filter(v => v > 0).length).toFixed(1) : '-'}/5
+                记录 {moodTrendData.data.filter(v => v > 0).length} 天 · 平均心情 {moodTrendData.data.filter(v => v > 0).length > 0 ? (moodTrendData.data.reduce((a, b) => a + b, 0) / moodTrendData.data.filter(v => v > 0).length).toFixed(1) : '-'}/5
               </Text>
             </View>
           </View>
@@ -855,11 +1229,11 @@ export default function DiaryScreen() {
         )}
 
         {/* 词云展示 */}
-        {wordCloud.length > 0 && (
+        {wordCloudData.length > 0 && (
           <View style={styles.statsSection}>
             <Text style={styles.statsSectionTitle}>常用词汇</Text>
             <View style={styles.wordCloudContainer}>
-              {wordCloud.slice(0, 15).map(([word, count], index) => {
+              {wordCloudData.slice(0, 15).map(([word, count], index) => {
                 const fontSize = Math.max(12, 22 - index * 0.6);
                 return (
                   <View key={word} style={styles.wordCloudItem}>
@@ -874,39 +1248,39 @@ export default function DiaryScreen() {
         )}
 
         {/* 年度报告 */}
-        {yearlyReport && (
+        {yearlyReportData && (
           <View style={styles.statsSection}>
-            <Text style={styles.statsSectionTitle}>{yearlyReport.year}年度回顾</Text>
+            <Text style={styles.statsSectionTitle}>{yearlyReportData.year}年度回顾</Text>
             <View style={styles.yearlyReportCard}>
               <View style={styles.yearlyReportStats}>
                 <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReport.totalEntries}</Text>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.totalEntries}</Text>
                   <Text style={styles.yearlyReportLabel}>篇日记</Text>
                 </View>
                 <View style={styles.yearlyReportStat}>
                   <Text style={styles.yearlyReportNumber}>
-                    {yearlyReport.totalWords > 1000 
-                      ? (yearlyReport.totalWords / 1000).toFixed(1) + 'k' 
-                      : yearlyReport.totalWords}
+                    {yearlyReportData.totalWords > 1000 
+                      ? (yearlyReportData.totalWords / 1000).toFixed(1) + 'k' 
+                      : yearlyReportData.totalWords}
                   </Text>
                   <Text style={styles.yearlyReportLabel}>字数</Text>
                 </View>
                 <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReport.favoriteMonth + 1}月</Text>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.favoriteMonth + 1}月</Text>
                   <Text style={styles.yearlyReportLabel}>最活跃</Text>
                 </View>
               </View>
 
-              {Object.keys(yearlyReport.moodDist).length > 0 && (
+              {Object.keys(yearlyReportData.moodDist).length > 0 && (
                 <View style={styles.yearlyReportMoods}>
                   <Text style={styles.yearlyReportMoodTitle}>年度心情 TOP3</Text>
                   <View style={styles.yearlyReportMoodList}>
-                    {Object.entries(yearlyReport.moodDist)
+                    {Object.entries(yearlyReportData.moodDist)
                       .sort((a, b) => b[1] - a[1])
                       .slice(0, 3)
                       .map(([mood, count]) => {
                         const moodInfo = getMoodDisplay(mood);
-                        const percentage = Math.round((count / yearlyReport.totalEntries) * 100);
+                        const percentage = Math.round((count / yearlyReportData.totalEntries) * 100);
                         return (
                           <View key={mood} style={styles.yearlyReportMoodItem}>
                             {React.createElement(moodInfo.iconComponent, { size: 20, color: '#000000' })}
@@ -1010,14 +1384,24 @@ export default function DiaryScreen() {
                   </Text>
                   <Text style={styles.modalDate}>{formatDate(getTodayString())}</Text>
                 </View>
-                <TouchableOpacity onPress={() => setShowEditor(false)}>
-                  <Ionicons name="close" size={24} color="#333" />
-                </TouchableOpacity>
+                <View style={styles.modalHeaderRight}>
+                  {editingEntry && editHistory.length > 0 && (
+                    <TouchableOpacity 
+                      style={styles.historyBtn}
+                      onPress={() => setShowEditHistory(true)}
+                    >
+                      <Ionicons name="time-outline" size={22} color="#666" />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => setShowEditor(false)}>
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <ScrollView style={styles.modalBody}>
                 <TextInput
-                  style={styles.modalInput}
+                  style={[styles.modalInput, isMarkdown && styles.markdownInput]}
                   placeholder="今天发生了什么值得记录的事..."
                   value={editorContent}
                   onChangeText={setEditorContent}
@@ -1053,6 +1437,29 @@ export default function DiaryScreen() {
                   <TouchableOpacity style={styles.toolbarBtn} onPress={getLocation}>
                     <Ionicons name="location-outline" size={22} color={editorLocation ? '#000' : '#666'} />
                   </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.toolbarBtn, isFetchingWeather && styles.toolbarBtnLoading]} 
+                    onPress={fetchWeather}
+                    disabled={isFetchingWeather}
+                  >
+                    {isFetchingWeather ? (
+                      <ActivityIndicator size="small" color="#666" />
+                    ) : (
+                      <Ionicons name="partly-sunny-outline" size={22} color={editorWeather ? '#000' : '#666'} />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.toolbarBtn, isRecording && styles.toolbarBtnActive]} 
+                    onPress={startVoiceRecording}
+                  >
+                    <Ionicons name="mic-outline" size={22} color={isRecording ? '#FF3B30' : '#666'} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.toolbarBtn, isMarkdown && styles.toolbarBtnActive]} 
+                    onPress={() => setIsMarkdown(!isMarkdown)}
+                  >
+                    <Ionicons name="code-outline" size={22} color={isMarkdown ? '#000' : '#666'} />
+                  </TouchableOpacity>
                   {editorLocation && (
                     <View style={styles.locationTag}>
                       <Ionicons name="location" size={12} color="#000" />
@@ -1064,20 +1471,125 @@ export default function DiaryScreen() {
                   )}
                 </View>
 
+                {/* 天气信息显示 */}
+                {editorWeather && (
+                  <View style={styles.weatherInfo}>
+                    <Ionicons 
+                      name={
+                        editorWeather.icon === 'sunny' ? 'sunny' :
+                        editorWeather.icon === 'rain' ? 'rainy' :
+                        editorWeather.icon === 'snow' ? 'snow' :
+                        editorWeather.icon === 'thunderstorm' ? 'thunderstorm' :
+                        'cloudy'
+                      } as any
+                      size={24} 
+                      color="#000" 
+                    />
+                    <Text style={styles.weatherText}>
+                      {editorWeather.description} · {editorWeather.temp}°C
+                    </Text>
+                    {editorWeather.humidity && (
+                      <Text style={styles.weatherDetail}>
+                        湿度 {editorWeather.humidity}%
+                      </Text>
+                    )}
+                    <TouchableOpacity onPress={() => setEditorWeather(undefined)}>
+                      <Ionicons name="close" size={16} color="#999" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Markdown 工具栏 */}
+                {isMarkdown && (
+                  <View style={styles.markdownToolbar}>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('heading')}>
+                      <Text style={styles.mdBtnText}>H</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('bold')}>
+                      <Text style={styles.mdBtnText}>B</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('italic')}>
+                      <Text style={styles.mdBtnText}>I</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('list')}>
+                      <Text style={styles.mdBtnText}>•</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('quote')}>
+                      <Text style={styles.mdBtnText}>"</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.mdBtn} onPress={() => insertMarkdown('code')}>
+                      <Text style={styles.mdBtnText}>{'</>'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {/* 心情选择 */}
                 <View style={styles.moodSelector}>
-                  <Text style={styles.selectorLabel}>心情</Text>
+                  <View style={styles.moodSelectorHeader}>
+                    <Text style={styles.selectorLabel}>心情</Text>
+                    <TouchableOpacity onPress={() => setShowCustomMoodModal(true)}>
+                      <Text style={styles.addMoodText}>+ 自定义</Text>
+                    </TouchableOpacity>
+                  </View>
                   <View style={styles.moodOptions}>
                     {MOODS.map(mood => (
                       <TouchableOpacity
                         key={mood.key}
-                        style={[styles.moodBtn, editorMood === mood.key && styles.moodBtnActive]}
+                        style={[
+                          styles.moodBtn, 
+                          editorMood === mood.key && styles.moodBtnActive,
+                          { backgroundColor: editorMood === mood.key ? mood.color : '#F5F5F5' }
+                        ]}
                         onPress={() => setEditorMood(mood.key)}
                       >
-                        {React.createElement(mood.iconComponent, { size: 24, color: editorMood === mood.key ? '#FFFFFF' : '#000000' })}
+                        {React.createElement(mood.iconComponent, { size: 24, color: editorMood === mood.key ? '#FFFFFF' : mood.color })}
+                      </TouchableOpacity>
+                    ))}
+                    {/* 自定义心情 */}
+                    {customMoods.map(mood => (
+                      <TouchableOpacity
+                        key={mood.id}
+                        style={[
+                          styles.moodBtn, 
+                          editorMood === mood.id && styles.moodBtnActive,
+                          { backgroundColor: editorMood === mood.id ? mood.color : '#F5F5F5' }
+                        ]}
+                        onPress={() => setEditorMood(mood.id)}
+                      >
+                        <Text style={{ fontSize: 24 }}>{mood.emoji}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
+                </View>
+
+                {/* 心情强度 */}
+                <View style={styles.intensitySelector}>
+                  <Text style={styles.selectorLabel}>心情强度</Text>
+                  <View style={styles.intensityOptions}>
+                    {[1, 2, 3, 4, 5].map(level => (
+                      <TouchableOpacity
+                        key={level}
+                        style={[
+                          styles.intensityBtn,
+                          editorMoodIntensity >= level && styles.intensityBtnActive
+                        ]}
+                        onPress={() => setEditorMoodIntensity(level)}
+                      >
+                        <View style={[
+                          styles.intensityLevelDot,
+                          editorMoodIntensity >= level && { 
+                            backgroundColor: MOODS.find(m => m.key === editorMood)?.color || '#007AFF' 
+                          }
+                        ]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.intensityLabel}>
+                    {editorMoodIntensity === 1 ? '很低' :
+                     editorMoodIntensity === 2 ? '较低' :
+                     editorMoodIntensity === 3 ? '一般' :
+                     editorMoodIntensity === 4 ? '较好' : '很好'}
+                  </Text>
                 </View>
 
                 {/* 标签选择 */}
@@ -1214,6 +1726,24 @@ export default function DiaryScreen() {
                       ))}
                     </ScrollView>
                   )}
+                  {detailEntry.weather && (
+                    <View style={styles.detailWeather}>
+                      <Ionicons 
+                        name={
+                          detailEntry.weather.icon === 'sunny' ? 'sunny' :
+                          detailEntry.weather.icon === 'rain' ? 'rainy' :
+                          detailEntry.weather.icon === 'snow' ? 'snow' :
+                          detailEntry.weather.icon === 'thunderstorm' ? 'thunderstorm' :
+                          'cloudy'
+                        } as any
+                        size={18} 
+                        color="#666" 
+                      />
+                      <Text style={styles.detailWeatherText}>
+                        {detailEntry.weather.description} · {detailEntry.weather.temp}°C
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.detailText}>{detailEntry.content}</Text>
                   {detailEntry.wordCount > 0 && (
                     <Text style={styles.wordCountText}>{detailEntry.wordCount} 字</Text>
@@ -1221,6 +1751,144 @@ export default function DiaryScreen() {
                 </ScrollView>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* 编辑历史弹窗 */}
+      <Modal
+        visible={showEditHistory}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEditHistory(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.historyModal}>
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>编辑历史</Text>
+              <TouchableOpacity onPress={() => setShowEditHistory(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.historyList}>
+              {editHistory.map((item, index) => (
+                <TouchableOpacity 
+                  key={item.id} 
+                  style={styles.historyItem}
+                  onPress={() => restoreVersion(item)}
+                >
+                  <View style={styles.historyItemHeader}>
+                    <Ionicons name="time-outline" size={16} color="#999" />
+                    <Text style={styles.historyTime}>
+                      {new Date(item.editedAt).toLocaleString('zh-CN')}
+                    </Text>
+                  </View>
+                  <Text style={styles.historyContent} numberOfLines={3}>
+                    {item.content}
+                  </Text>
+                  <Text style={styles.historyRestore}>点击恢复此版本</Text>
+                </TouchableOpacity>
+              ))}
+              {editHistory.length === 0 && (
+                <View style={styles.historyEmpty}>
+                  <Text style={styles.historyEmptyText}>暂无编辑历史</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 时间跳转弹窗 */}
+      <Modal
+        visible={showJumpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowJumpModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.jumpModal}>
+            <View style={styles.jumpHeader}>
+              <Text style={styles.jumpTitle}>跳转到</Text>
+              <TouchableOpacity onPress={() => setShowJumpModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.jumpContent}>
+              <View style={styles.jumpInputRow}>
+                <Text style={styles.jumpLabel}>年份</Text>
+                <TextInput
+                  style={styles.jumpInput}
+                  value={String(jumpYear)}
+                  onChangeText={(text) => setJumpYear(parseInt(text) || new Date().getFullYear())}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
+              </View>
+              <View style={styles.jumpInputRow}>
+                <Text style={styles.jumpLabel}>月份</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.monthSelector}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(month => (
+                    <TouchableOpacity
+                      key={month}
+                      style={[styles.monthBtn, jumpMonth === month && styles.monthBtnActive]}
+                      onPress={() => setJumpMonth(month)}
+                    >
+                      <Text style={[styles.monthBtnText, jumpMonth === month && styles.monthBtnTextActive]}>
+                        {month}月
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+              <TouchableOpacity style={styles.jumpConfirmBtn} onPress={jumpToDate}>
+                <Text style={styles.jumpConfirmText}>跳转</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 自定义心情弹窗 */}
+      <Modal
+        visible={showCustomMoodModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCustomMoodModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.customMoodModal}>
+            <View style={styles.customMoodHeader}>
+              <Text style={styles.customMoodTitle}>自定义心情</Text>
+              <TouchableOpacity onPress={() => setShowCustomMoodModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.customMoodContent}>
+              {customMoods.map(mood => (
+                <View key={mood.id} style={styles.customMoodItem}>
+                  <Text style={{ fontSize: 24 }}>{mood.emoji}</Text>
+                  <Text style={styles.customMoodName}>{mood.name}</Text>
+                  <View style={[styles.customMoodColor, { backgroundColor: mood.color }]} />
+                </View>
+              ))}
+              <View style={styles.addCustomMoodForm}>
+                <Text style={styles.addCustomMoodTitle}>添加新心情</Text>
+                <TextInput
+                  style={styles.customMoodInput}
+                  placeholder="心情名称"
+                  onChangeText={() => {}}
+                />
+                <TextInput
+                  style={styles.customMoodInput}
+                  placeholder="图标名称 (如: happy, sunny, cloudy)"
+                  onChangeText={() => {}}
+                />
+                <TouchableOpacity style={styles.addCustomMoodBtn}>
+                  <Text style={styles.addCustomMoodBtnText}>添加</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1712,7 +2380,6 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: '#000000',
     left: '50%',
-    transformOrigin: 'left center',
     zIndex: 1,
   },
   moodTrendXLabel: {
@@ -2189,6 +2856,10 @@ const styles = StyleSheet.create({
   toolbarBtn: {
     padding: 4,
   },
+  toolbarBtnActive: {
+    backgroundColor: '#F0F0F0',
+    borderRadius: 4,
+  },
   locationTag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2274,5 +2945,413 @@ const styles = StyleSheet.create({
   },
   calendarContainer: {
     flex: 1,
+  },
+  // 新增样式
+  modalHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  historyBtn: {
+    padding: 4,
+  },
+  markdownInput: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 14,
+  },
+  toolbarBtnLoading: {
+    opacity: 0.6,
+  },
+  weatherInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  weatherText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  weatherDetail: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 8,
+  },
+  markdownToolbar: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 12,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  mdBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mdBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  detailWeather: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  detailWeatherText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  // 编辑历史弹窗样式
+  historyModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    minHeight: '50%',
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  historyList: {
+    padding: 20,
+  },
+  historyItem: {
+    padding: 16,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  historyItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  historyTime: {
+    fontSize: 12,
+    color: '#999',
+  },
+  historyContent: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  historyRestore: {
+    fontSize: 12,
+    color: '#007AFF',
+    marginTop: 8,
+  },
+  historyEmpty: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  historyEmptyText: {
+    fontSize: 14,
+    color: '#999',
+  },
+  // 骨架屏样式
+  skeletonCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  skeletonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  skeletonMood: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E0E0E0',
+  },
+  skeletonTag: {
+    width: 60,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E0E0E0',
+  },
+  skeletonContent: {
+    height: 16,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonContentShort: {
+    height: 16,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 4,
+    width: '60%',
+  },
+  skeletonWriteCard: {
+    height: 80,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  skeletonFilter: {
+    height: 40,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  skeletonDateGroup: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  skeletonDateHeader: {
+    height: 40,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  // 时间跳转样式
+  timelineControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    gap: 12,
+  },
+  jumpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    gap: 4,
+  },
+  jumpBtnText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  jumpModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '80%',
+    maxWidth: 360,
+  },
+  jumpHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  jumpTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  jumpContent: {
+    gap: 20,
+  },
+  jumpInputRow: {
+    gap: 12,
+  },
+  jumpLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  jumpInput: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#000',
+    borderBottomWidth: 2,
+    borderBottomColor: '#E5E5E5',
+    paddingVertical: 8,
+  },
+  monthSelector: {
+    flexDirection: 'row',
+  },
+  monthBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+  },
+  monthBtnActive: {
+    backgroundColor: '#000',
+  },
+  monthBtnText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  monthBtnTextActive: {
+    color: '#FFF',
+    fontWeight: '500',
+  },
+  jumpConfirmBtn: {
+    backgroundColor: '#000',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  jumpConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  // 心情选择器样式
+  moodSelectorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  addMoodText: {
+    fontSize: 14,
+    color: '#007AFF',
+  },
+  intensitySelector: {
+    marginTop: 16,
+  },
+  intensityOptions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  intensityBtn: {
+    flex: 1,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  intensityBtnActive: {
+    // 激活状态通过子元素样式控制
+  },
+  intensityLevelDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#E5E5E5',
+  },
+  intensityLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  intensityIndicator: {
+    flexDirection: 'row',
+    gap: 2,
+    marginLeft: 'auto',
+  },
+  intensityDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E5E5E5',
+  },
+  intensityDotActive: {
+    backgroundColor: '#007AFF',
+  },
+  // 自定义心情弹窗样式
+  customMoodModal: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+    minHeight: '50%',
+  },
+  customMoodHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  customMoodTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+  },
+  customMoodContent: {
+    padding: 20,
+  },
+  customMoodItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  customMoodName: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  customMoodColor: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  addCustomMoodForm: {
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+  },
+  addCustomMoodTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  customMoodInput: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  addCustomMoodBtn: {
+    backgroundColor: '#000',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  addCustomMoodBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
   },
 });

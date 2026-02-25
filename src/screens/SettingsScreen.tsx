@@ -23,6 +23,7 @@ import {
   formatDate,
   BackupMetadata,
   clearAllData,
+  exportAllLifeLogsToCSV,
 } from '../utils/backupUtils';
 
 export default function SettingsScreen() {
@@ -265,7 +266,7 @@ export default function SettingsScreen() {
               <Text style={styles.iconText}>↓</Text>
             </View>
             <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>导出数据</Text>
+              <Text style={styles.menuTitle}>导出数据 (JSON)</Text>
               <Text style={styles.menuDesc}>将所有数据导出为 JSON 文件</Text>
             </View>
           </TouchableOpacity>
@@ -280,6 +281,33 @@ export default function SettingsScreen() {
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>导入数据</Text>
               <Text style={styles.menuDesc}>从备份文件恢复数据</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* 数据导出 */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>数据导出</Text>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={async () => {
+              try {
+                await exportAllLifeLogsToCSV();
+                if (Platform.OS !== 'web') {
+                  Alert.alert('导出成功', 'CSV 文件已保存到应用文档目录');
+                }
+              } catch (error) {
+                Alert.alert('导出失败', error instanceof Error ? error.message : '未知错误');
+              }
+            }}
+          >
+            <View style={[styles.menuIcon, { backgroundColor: '#4CAF50' }]}>
+              <Text style={styles.iconText}>CSV</Text>
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>导出日志 (CSV)</Text>
+              <Text style={styles.menuDesc}>将 Life Log 数据导出为 CSV 格式</Text>
             </View>
           </TouchableOpacity>
         </View>

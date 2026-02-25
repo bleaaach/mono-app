@@ -262,7 +262,6 @@ const styles = StyleSheet.create({
     left: '50%',
     marginLeft: -1,
     transform: [{ rotate: '90deg' }],
-    transformOrigin: 'bottom',
   },
   clockHandActive: {
     backgroundColor: Colors.background,

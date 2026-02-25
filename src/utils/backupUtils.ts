@@ -338,3 +338,146 @@ export function formatDate(dateString: string): string {
     minute: '2-digit',
   });
 }
+
+// ==================== CSV 导出功能 ====================
+
+import { LifeLogCategory, LifeLogEntry } from '../types';
+
+/**
+ * 将 Life Log 数据导出为 CSV 格式
+ */
+export function exportLifeLogToCSV(
+  categories: LifeLogCategory[],
+  entries: LifeLogEntry[]
+): string {
+  if (categories.length === 0 || entries.length === 0) {
+    return '';
+  }
+
+  // 收集所有可能的字段
+  const allFields = new Map<string, { name: string; type: string }>();
+  categories.forEach(cat => {
+    cat.fields.forEach(field => {
+      if (!allFields.has(field.id)) {
+        allFields.set(field.id, { name: field.name, type: field.type });
+      }
+    });
+  });
+
+  // CSV 头部
+  const headers = [
+    'ID',
+    '分类',
+    '分类ID',
+    '标题',
+    '创建时间',
+    '更新时间',
+    '标签',
+    ...Array.from(allFields.entries()).map(([id, info]) => info.name),
+  ];
+
+  // CSV 行
+  const rows = entries.map(entry => {
+    const category = categories.find(c => c.id === entry.categoryId);
+    const titleField = category?.fields[0];
+    const title = titleField ? entry.data[titleField.id] : entry.title;
+
+    const row = [
+      entry.id,
+      category?.name || '未知分类',
+      entry.categoryId,
+      title || '',
+      entry.createdAt,
+      entry.updatedAt,
+      entry.tags.join(', '),
+    ];
+
+    // 添加动态字段值
+    Array.from(allFields.keys()).forEach(fieldId => {
+      const value = entry.data[fieldId];
+      if (value === undefined || value === null) {
+        row.push('');
+      } else if (typeof value === 'string') {
+        // 处理包含逗号或换行符的字符串
+        const escaped = value.includes(',') || value.includes('\n') || value.includes('"')
+          ? `"${value.replace(/"/g, '""')}"`
+          : value;
+        row.push(escaped);
+      } else {
+        row.push(String(value));
+      }
+    });
+
+    return row;
+  });
+
+  // 组合 CSV 内容
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.join(',')),
+  ].join('\n');
+
+  return csvContent;
+}
+
+/**
+ * 下载 CSV 文件
+ */
+export async function downloadCSV(
+  csvContent: string,
+  filename?: string
+): Promise<void> {
+  const timestamp = new Date().toISOString().split('T')[0];
+  const defaultFilename = `lifelog-export-${timestamp}.csv`;
+  const finalFilename = filename || defaultFilename;
+
+  if (Platform.OS === 'web') {
+    // Web 平台：触发浏览器下载
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = finalFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } else {
+    // 移动端：保存到缓存目录
+    const file = new File(Paths.cache, finalFilename);
+    await file.write('\ufeff' + csvContent);
+    console.log('CSV saved to:', file.uri);
+  }
+}
+
+/**
+ * 导出单个分类的 Life Log 数据为 CSV
+ */
+export async function exportCategoryToCSV(
+  category: LifeLogCategory,
+  entries: LifeLogEntry[]
+): Promise<void> {
+  const categoryEntries = entries.filter(e => e.categoryId === category.id);
+  const csvContent = exportLifeLogToCSV([category], categoryEntries);
+
+  if (csvContent) {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `${category.name}-export-${timestamp}.csv`;
+    await downloadCSV(csvContent, filename);
+  }
+}
+
+/**
+ * 导出所有 Life Log 数据为 CSV
+ */
+export async function exportAllLifeLogsToCSV(): Promise<void> {
+  const backupData = await exportAllData();
+  const csvContent = exportLifeLogToCSV(
+    backupData.data.lifeLogCategories,
+    backupData.data.lifeLogEntries
+  );
+
+  if (csvContent) {
+    await downloadCSV(csvContent);
+  }
+}

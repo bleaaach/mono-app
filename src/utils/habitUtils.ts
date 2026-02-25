@@ -338,89 +338,152 @@ export const getAchievements = (stats: HabitStats): Achievement[] => {
       id: 'first_step',
       name: '第一步',
       description: '完成第一次打卡',
-      icon: '🎯',
+      icon: 'star',
       unlocked: stats.totalCompletions >= 1,
     },
     {
       id: 'week_warrior',
       name: '周战士',
       description: '连续打卡7天',
-      icon: '🔥',
+      icon: 'fire',
       unlocked: stats.currentStreak >= 7 || stats.longestStreak >= 7,
     },
     {
       id: 'month_master',
       name: '月度大师',
       description: '连续打卡30天',
-      icon: '📅',
+      icon: 'check',
       unlocked: stats.currentStreak >= 30 || stats.longestStreak >= 30,
     },
     {
       id: 'quarter_champion',
       name: '季度冠军',
       description: '连续打卡90天',
-      icon: '🏆',
+      icon: 'star',
       unlocked: stats.currentStreak >= 90 || stats.longestStreak >= 90,
     },
     {
       id: 'half_year_hero',
       name: '半年英雄',
       description: '连续打卡180天',
-      icon: '🦸',
+      icon: 'muscle',
       unlocked: stats.currentStreak >= 180 || stats.longestStreak >= 180,
     },
     {
       id: 'year_legend',
       name: '年度传奇',
       description: '连续打卡365天',
-      icon: '👑',
+      icon: 'crown',
       unlocked: stats.currentStreak >= 365 || stats.longestStreak >= 365,
     },
     {
       id: 'hundred_club',
       name: '百次俱乐部',
       description: '累计打卡100次',
-      icon: '💯',
+      icon: 'check',
       unlocked: stats.totalCompletions >= 100,
     },
     {
       id: 'five_hundred_club',
       name: '五百次俱乐部',
       description: '累计打卡500次',
-      icon: '🌟',
+      icon: 'star',
       unlocked: stats.totalCompletions >= 500,
     },
     {
       id: 'thousand_club',
       name: '千次俱乐部',
       description: '累计打卡1000次',
-      icon: '💎',
+      icon: 'sparkle',
       unlocked: stats.totalCompletions >= 1000,
     },
     {
       id: 'perfect_week',
       name: '完美周',
       description: '一周全部完成',
-      icon: '✨',
+      icon: 'check',
       unlocked: stats.weeklyStats.every(count => count > 0),
     },
     {
       id: 'perfect_month',
       name: '完美月',
       description: '一月全部完成',
-      icon: '🌙',
+      icon: 'moon',
       unlocked: stats.monthlyStats.every(count => count > 0),
     },
     {
       id: 'eighty_percent',
       name: '优秀表现',
       description: '完成率达到80%',
-      icon: '🎖️',
+      icon: 'star',
       unlocked: stats.completionRate >= 80,
     },
   ];
 
   return achievements;
+};
+
+// 获取习惯大师成就（全局成就）
+export interface MasterAchievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  progress: number;
+  target: number;
+}
+
+export const getMasterAchievements = (
+  habits: Habit[],
+  logs: HabitLog[]
+): MasterAchievement[] => {
+  const activeHabits = habits.filter(h => !h.archived && !h.paused);
+  const allStats = activeHabits.map(h => getHabitStats(h, logs));
+  
+  // 计算同时维持多个习惯的数量（连续7天以上）
+  const maintainedHabits = allStats.filter(s => s.currentStreak >= 7).length;
+  const masterHabits = allStats.filter(s => s.currentStreak >= 30).length;
+  const grandMasterHabits = allStats.filter(s => s.currentStreak >= 90).length;
+  
+  return [
+    {
+      id: 'habit_master',
+      name: '习惯大师',
+      description: '同时维持3个习惯连续7天',
+      icon: 'check',
+      unlocked: maintainedHabits >= 3,
+      progress: Math.min(maintainedHabits, 3),
+      target: 3,
+    },
+    {
+      id: 'habit_expert',
+      name: '习惯专家',
+      description: '同时维持3个习惯连续30天',
+      icon: 'star',
+      unlocked: masterHabits >= 3,
+      progress: Math.min(masterHabits, 3),
+      target: 3,
+    },
+    {
+      id: 'habit_grandmaster',
+      name: '习惯宗师',
+      description: '同时维持3个习惯连续90天',
+      icon: 'sparkle',
+      unlocked: grandMasterHabits >= 3,
+      progress: Math.min(grandMasterHabits, 3),
+      target: 3,
+    },
+    {
+      id: 'multi_habit_master',
+      name: '多面手',
+      description: '同时维持5个习惯连续7天',
+      icon: 'crown',
+      unlocked: maintainedHabits >= 5,
+      progress: Math.min(maintainedHabits, 5),
+      target: 5,
+    },
+  ];
 };
 
 // ==================== 全局统计数据 ====================
@@ -768,4 +831,169 @@ export const getUpcomingAchievements = (
   return upcoming
     .sort((a, b) => a.remaining - b.remaining)
     .slice(0, 3);
+};
+
+// ==================== 习惯关联分析 ====================
+
+export interface HabitCorrelation {
+  habitId1: string;
+  habitName1: string;
+  habitId2: string;
+  habitName2: string;
+  correlationScore: number; // 关联度 0-100
+  correlationType: 'positive' | 'negative' | 'neutral';
+  description: string;
+}
+
+// 计算两个习惯的关联度
+export const calculateHabitCorrelation = (
+  habit1: Habit,
+  habit2: Habit,
+  logs: HabitLog[]
+): number => {
+  const logs1 = logs.filter(l => l.habitId === habit1.id && l.completed);
+  const logs2 = logs.filter(l => l.habitId === habit2.id && l.completed);
+  
+  if (logs1.length < 5 || logs2.length < 5) return 0;
+  
+  const dates1 = new Set(logs1.map(l => l.date));
+  const dates2 = new Set(logs2.map(l => l.date));
+  
+  // 计算共同完成的日期
+  let sameDayCount = 0;
+  let totalDays = 0;
+  
+  const allDates = new Set([...dates1, ...dates2]);
+  allDates.forEach(date => {
+    const has1 = dates1.has(date);
+    const has2 = dates2.has(date);
+    if (has1 && has2) sameDayCount++;
+    if (has1 || has2) totalDays++;
+  });
+  
+  if (totalDays === 0) return 0;
+  
+  // 关联度 = 共同完成天数 / 总天数 * 100
+  return Math.round((sameDayCount / totalDays) * 100);
+};
+
+// 获取所有习惯关联分析
+export const getHabitCorrelations = (
+  habits: Habit[],
+  logs: HabitLog[]
+): HabitCorrelation[] => {
+  const correlations: HabitCorrelation[] = [];
+  
+  for (let i = 0; i < habits.length; i++) {
+    for (let j = i + 1; j < habits.length; j++) {
+      const score = calculateHabitCorrelation(habits[i], habits[j], logs);
+      
+      if (score >= 30) { // 只显示关联度30%以上的
+        let type: 'positive' | 'negative' | 'neutral' = 'neutral';
+        let description = '';
+        
+        if (score >= 70) {
+          type = 'positive';
+          description = `「${habits[i].name}」和「${habits[j].name}」经常一起完成，是很好的习惯组合！`;
+        } else if (score >= 50) {
+          type = 'positive';
+          description = `「${habits[i].name}」和「${habits[j].name}」有一定关联性。`;
+        } else {
+          type = 'neutral';
+          description = `「${habits[i].name}」和「${habits[j].name}」偶尔一起完成。`;
+        }
+        
+        correlations.push({
+          habitId1: habits[i].id,
+          habitName1: habits[i].name,
+          habitId2: habits[j].id,
+          habitName2: habits[j].name,
+          correlationScore: score,
+          correlationType: type,
+          description,
+        });
+      }
+    }
+  }
+  
+  return correlations.sort((a, b) => b.correlationScore - a.correlationScore);
+};
+
+// ==================== 预测完成概率 ====================
+
+export interface CompletionPrediction {
+  habitId: string;
+  habitName: string;
+  todayProbability: number; // 今日完成概率 0-100
+  weekProbability: number; // 本周完成概率 0-100
+  trend: 'improving' | 'declining' | 'stable';
+  suggestion: string;
+}
+
+// 预测习惯完成概率
+export const predictCompletionProbability = (
+  habit: Habit,
+  logs: HabitLog[]
+): CompletionPrediction => {
+  const habitLogs = logs.filter(l => l.habitId === habit.id && l.completed);
+  const stats = getHabitStats(habit, logs);
+  
+  // 基于历史完成率计算基础概率
+  let baseProbability = stats.completionRate;
+  
+  // 基于最近7天趋势调整
+  const last7Days: number[] = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const completed = habitLogs.some(l => l.date === dateStr) ? 1 : 0;
+    last7Days.push(completed);
+  }
+  
+  const recent7Sum = last7Days.slice(-7).reduce((a, b) => a + b, 0);
+  const trend = recent7Sum >= 5 ? 'improving' : recent7Sum >= 3 ? 'stable' : 'declining';
+  
+  // 调整概率
+  let todayProbability = baseProbability;
+  if (trend === 'improving') todayProbability = Math.min(100, todayProbability + 15);
+  else if (trend === 'declining') todayProbability = Math.max(0, todayProbability - 15);
+  
+  // 本周概率（基于当前是周几）
+  const dayOfWeek = today.getDay();
+  const daysLeft = 7 - dayOfWeek;
+  const weekProbability = Math.min(100, todayProbability + (daysLeft * 5));
+  
+  // 生成建议
+  let suggestion = '';
+  if (todayProbability >= 80) {
+    suggestion = '保持这个节奏，你做得很好！';
+  } else if (todayProbability >= 50) {
+    suggestion = '今天记得打卡，保持连续性！';
+  } else if (stats.currentStreak > 0) {
+    suggestion = `已连续${stats.currentStreak}天，今天不要中断！`;
+  } else {
+    suggestion = '从今天开始，建立新的连续记录！';
+  }
+  
+  return {
+    habitId: habit.id,
+    habitName: habit.name,
+    todayProbability: Math.round(todayProbability),
+    weekProbability: Math.round(weekProbability),
+    trend,
+    suggestion,
+  };
+};
+
+// 获取所有习惯的完成预测
+export const getAllCompletionPredictions = (
+  habits: Habit[],
+  logs: HabitLog[]
+): CompletionPrediction[] => {
+  return habits
+    .filter(h => !h.archived && !h.paused)
+    .map(h => predictCompletionProbability(h, logs))
+    .sort((a, b) => b.todayProbability - a.todayProbability);
 };

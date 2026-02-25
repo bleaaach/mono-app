@@ -40,6 +40,7 @@ export const storage = {
   async get<T>(key: string): Promise<T | null> {
     try {
       const jsonValue = await AsyncStorage.getItem(key);
+      console.log('[Storage] Get:', key, 'Value:', jsonValue ? 'found' : 'null');
       return jsonValue != null ? JSON.parse(jsonValue) : null;
     } catch (error) {
       console.error('Storage get error:', error);
@@ -115,6 +116,37 @@ export const habitLogStorage = {
   },
 };
 
+// 自定义分类类型
+export interface CustomCategory {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  createdAt: string;
+}
+
+// 自定义分类存储
+export const customCategoryStorage = {
+  get: (): Promise<CustomCategory[] | null> => storage.get<CustomCategory[]>(KEYS.CUSTOM_CATEGORIES),
+  set: (value: CustomCategory[]) => storage.set(KEYS.CUSTOM_CATEGORIES, value),
+  // 添加自定义分类
+  add: async (category: Omit<CustomCategory, 'id' | 'createdAt'>): Promise<CustomCategory> => {
+    const categories = await customCategoryStorage.get() || [];
+    const newCategory: CustomCategory = {
+      ...category,
+      id: `custom_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    };
+    await customCategoryStorage.set([...categories, newCategory]);
+    return newCategory;
+  },
+  // 删除自定义分类
+  remove: async (categoryId: string): Promise<void> => {
+    const categories = await customCategoryStorage.get() || [];
+    await customCategoryStorage.set(categories.filter(c => c.id !== categoryId));
+  },
+};
+
 // 日记存储
 export const diaryStorage = {
   get: (): Promise<DiaryEntry[] | null> => storage.get<DiaryEntry[]>(KEYS.DIARIES),
@@ -165,19 +197,6 @@ export const timeLinksStorage = {
     todoActivities: {},
     habitActivities: {},
   }),
-};
-
-// 自定义分类存储
-export interface CustomCategory {
-  id: string;
-  name: string;
-  color: string;
-  icon: string;
-}
-
-export const customCategoryStorage = {
-  get: (): Promise<CustomCategory[] | null> => storage.get<CustomCategory[]>(KEYS.CUSTOM_CATEGORIES),
-  set: (value: CustomCategory[]) => storage.set(KEYS.CUSTOM_CATEGORIES, value),
 };
 
 // 生活日志分类存储
@@ -532,7 +551,7 @@ export const storageTagStorage = {
     return tags;
   },
   set: (value: StorageTag[]) => storage.set(KEYS.STORAGE_TAGS, value),
-  
+
   // 创建标签
   create: async (tag: Omit<StorageTag, 'id' | 'usageCount'>): Promise<StorageTag> => {
     const tags = await storageTagStorage.get();
@@ -545,7 +564,17 @@ export const storageTagStorage = {
     await storageTagStorage.set(tags);
     return newTag;
   },
-  
+
+  // 更新标签
+  update: async (id: string, data: Partial<StorageTag>): Promise<void> => {
+    const tags = await storageTagStorage.get();
+    const index = tags.findIndex(t => t.id === id);
+    if (index !== -1) {
+      tags[index] = { ...tags[index], ...data };
+      await storageTagStorage.set(tags);
+    }
+  },
+
   // 更新标签使用次数
   updateUsage: async (tagName: string, delta: number): Promise<void> => {
     const tags = await storageTagStorage.get();
@@ -555,12 +584,18 @@ export const storageTagStorage = {
       await storageTagStorage.set(tags);
     }
   },
-  
+
   // 删除标签
   delete: async (id: string): Promise<void> => {
     const tags = await storageTagStorage.get();
     const newTags = tags.filter(t => t.id !== id);
     await storageTagStorage.set(newTags);
+  },
+
+  // 根据ID获取标签
+  getById: async (id: string): Promise<StorageTag | undefined> => {
+    const tags = await storageTagStorage.get();
+    return tags.find(t => t.id === id);
   },
 };
 
