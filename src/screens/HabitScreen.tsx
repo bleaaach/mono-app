@@ -280,6 +280,12 @@ export default function HabitScreen() {
   const [showDeleteLogModal, setShowDeleteLogModal] = useState(false);
   const [deleteLogData, setDeleteLogData] = useState<{ id: string; date: string } | null>(null);
 
+  // 补卡备注弹窗状态（点击日期格子补卡时使用）
+  const [showMakeupNoteModal, setShowMakeupNoteModal] = useState(false);
+  const [makeupNoteHabit, setMakeupNoteHabit] = useState<Habit | null>(null);
+  const [makeupNoteDate, setMakeupNoteDate] = useState<string>('');
+  const [makeupNoteText, setMakeupNoteText] = useState('');
+
   // 自定义分类
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -1134,22 +1140,33 @@ export default function HabitScreen() {
         return;
       }
 
-      const newLog: HabitLog = {
-        id: generateId(),
-        habitId: habit.id,
-        date: dateStr,
-        completed: true,
-        count: 1,
-        isMakeup: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      const newLogs = existingLog
-        ? habitLogs.map(l => l.id === existingLog.id ? newLog : l)
-        : [...habitLogs, newLog];
-
-      await saveHabitLogs(newLogs);
+      // 弹出备注输入框
+      setMakeupNoteHabit(habit);
+      setMakeupNoteDate(dateStr);
+      setMakeupNoteText('');
+      setShowMakeupNoteModal(true);
     }
+  };
+
+  // 保存带备注的补卡记录
+  const saveMakeupWithNote = async () => {
+    if (!makeupNoteHabit) return;
+
+    const newLog: HabitLog = {
+      id: generateId(),
+      habitId: makeupNoteHabit.id,
+      date: makeupNoteDate,
+      completed: true,
+      count: 1,
+      note: makeupNoteText.trim() || undefined,
+      isMakeup: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    await saveHabitLogs([...habitLogs, newLog]);
+    setShowMakeupNoteModal(false);
+    setMakeupNoteHabit(null);
+    setMakeupNoteText('');
   };
 
   // ==================== 拖拽排序功能 ====================
@@ -2607,6 +2624,58 @@ export default function HabitScreen() {
                 }}
               >
                 <Text style={styles.deleteLogModalButtonText}>删除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 补卡备注弹窗（点击日期格子补卡时使用） */}
+      <Modal
+        visible={showMakeupNoteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMakeupNoteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.checkinNoteModalContent}>
+            <View style={styles.checkinNoteHeader}>
+              <Text style={styles.modalTitle}>补卡备注</Text>
+              <TouchableOpacity onPress={() => setShowMakeupNoteModal(false)}>
+                <CloseIcon size={24} color={Colors.gray[500]} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.checkinNoteSubtitle}>
+              为「{makeupNoteHabit?.name}」补打 {makeupNoteDate ? formatDate(makeupNoteDate) : ''} 的记录
+            </Text>
+            
+            <TextInput
+              style={styles.checkinNoteInput}
+              placeholder="添加备注（可选）..."
+              value={makeupNoteText}
+              onChangeText={setMakeupNoteText}
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+            />
+            <Text style={styles.checkinNoteHint}>{makeupNoteText.length}/200</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => {
+                  // 跳过备注直接补卡
+                  saveMakeupWithNote();
+                }}
+              >
+                <Text style={styles.modalButtonCancelText}>跳过</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.modalButtonConfirm} 
+                onPress={saveMakeupWithNote}
+              >
+                <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
               </TouchableOpacity>
             </View>
           </View>
