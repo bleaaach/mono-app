@@ -275,6 +275,10 @@ export default function HabitScreen() {
   const [checkinNoteText, setCheckinNoteText] = useState('');
   const [checkinNoteDate, setCheckinNoteDate] = useState<string>('');
 
+  // 删除打卡记录确认弹窗状态
+  const [showDeleteLogModal, setShowDeleteLogModal] = useState(false);
+  const [deleteLogData, setDeleteLogData] = useState<{ id: string; date: string } | null>(null);
+
   // 自定义分类
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -2548,6 +2552,47 @@ export default function HabitScreen() {
         </View>
       </Modal>
 
+      {/* 删除打卡记录确认弹窗 */}
+      <Modal
+        visible={showDeleteLogModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteLogModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.deleteLogModalContent}>
+            <Text style={styles.deleteLogModalTitle}>删除打卡记录</Text>
+            <Text style={styles.deleteLogModalText}>
+              确定要删除 {deleteLogData ? formatDate(deleteLogData.date) : ''} 的打卡记录吗？
+            </Text>
+            <View style={styles.deleteLogModalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => {
+                  setShowDeleteLogModal(false);
+                  setDeleteLogData(null);
+                }}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteLogModalButton}
+                onPress={() => {
+                  if (deleteLogData) {
+                    const newLogs = habitLogs.filter(l => l.id !== deleteLogData.id);
+                    saveHabitLogs(newLogs);
+                    setShowDeleteLogModal(false);
+                    setDeleteLogData(null);
+                  }
+                }}
+              >
+                <Text style={styles.deleteLogModalButtonText}>删除</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* 习惯详情弹窗 */}
       <Modal
         visible={showDetailModal}
@@ -2731,21 +2776,8 @@ export default function HabitScreen() {
                               <TouchableOpacity
                                 style={styles.checkinHistoryDelete}
                                 onPress={() => {
-                                  Alert.alert(
-                                    '删除打卡记录',
-                                    `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
-                                    [
-                                      { text: '取消', style: 'cancel' },
-                                      {
-                                        text: '删除',
-                                        style: 'destructive',
-                                        onPress: () => {
-                                          const newLogs = habitLogs.filter(l => l.id !== log.id);
-                                          saveHabitLogs(newLogs);
-                                        },
-                                      },
-                                    ]
-                                  );
+                                  setDeleteLogData({ id: log.id, date: log.date });
+                                  setShowDeleteLogModal(true);
                                 }}
                                 activeOpacity={0.6}
                               >
@@ -4908,6 +4940,47 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 8,
     marginBottom: 16,
+  },
+  // 删除打卡记录确认弹窗
+  deleteLogModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 20,
+    maxWidth: 320,
+    width: '90%',
+    alignItems: 'center',
+  },
+  deleteLogModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 12,
+  },
+  deleteLogModalText: {
+    fontSize: 15,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  deleteLogModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  deleteLogModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  deleteLogModalButtonText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
   // 每周完成对比图表
   weeklyComparisonChart: {
