@@ -145,55 +145,7 @@ const getIconSymbol = (icon: string): string => {
   return '';
 };
 
-// 打卡历史记录项组件
-interface CheckinHistoryItemProps {
-  log: HabitLog;
-  habitLogs: HabitLog[];
-  onDelete: (logs: HabitLog[]) => Promise<void>;
-}
 
-const CheckinHistoryItem: React.FC<CheckinHistoryItemProps> = ({ log, habitLogs, onDelete }) => {
-  const handleDelete = () => {
-    Alert.alert(
-      '删除打卡记录',
-      `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '删除',
-          style: 'destructive',
-          onPress: () => {
-            const newLogs = habitLogs.filter(l => l.id !== log.id);
-            onDelete(newLogs);
-          },
-        },
-      ]
-    );
-  };
-
-  return (
-    <View style={styles.checkinHistoryItem}>
-      <View style={styles.checkinHistoryItemLeft}>
-        <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
-        {log.note && (
-          <Text style={styles.checkinHistoryNote} numberOfLines={1}>
-            {log.note}
-          </Text>
-        )}
-      </View>
-      <View style={styles.checkinHistoryItemRight}>
-        <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
-        <TouchableOpacity
-          style={styles.checkinHistoryDelete}
-          onPress={handleDelete}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.checkinHistoryDeleteText}>删除</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
 
 // 热力图颜色
 const HEATMAP_COLORS = {
@@ -2697,25 +2649,6 @@ export default function HabitScreen() {
                   </View>
                 </View>
 
-                {/* 最近打卡记录 */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionTitle}>最近打卡</Text>
-                  {habitLogs
-                    .filter(l => l.habitId === selectedHabit.id && l.completed)
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .slice(0, 10)
-                    .map((log, index) => (
-                      <View key={log.id || index} style={styles.logItem}>
-                        <View style={[styles.logDot, { backgroundColor: '#000000' }]} />
-                        <Text style={styles.logDate}>{formatDate(log.date)}</Text>
-                        {log.note && <Text style={styles.logNote}>{log.note}</Text>}
-                      </View>
-                    ))}
-                  {habitLogs.filter(l => l.habitId === selectedHabit.id && l.completed).length === 0 && (
-                    <Text style={styles.noLogsText}>暂无打卡记录</Text>
-                  )}
-                </View>
-
                 {/* 目标进度显示 */}
                 {selectedHabit.target?.type !== 'none' && selectedHabit.target?.value && (
                   <View style={styles.detailSection}>
@@ -2783,13 +2716,43 @@ export default function HabitScreen() {
                     
                     return (
                       <View style={styles.checkinHistoryList}>
-                        {logs.map((log, index) => (
-                          <CheckinHistoryItem
-                            key={log.id}
-                            log={log}
-                            habitLogs={habitLogs}
-                            onDelete={saveHabitLogs}
-                          />
+                        {logs.map((log) => (
+                          <View key={log.id} style={styles.checkinHistoryItem}>
+                            <View style={styles.checkinHistoryItemLeft}>
+                              <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
+                              {log.note && (
+                                <Text style={styles.checkinHistoryNote} numberOfLines={1}>
+                                  {log.note}
+                                </Text>
+                              )}
+                            </View>
+                            <View style={styles.checkinHistoryItemRight}>
+                              <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
+                              <TouchableOpacity
+                                style={styles.checkinHistoryDelete}
+                                onPress={() => {
+                                  Alert.alert(
+                                    '删除打卡记录',
+                                    `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
+                                    [
+                                      { text: '取消', style: 'cancel' },
+                                      {
+                                        text: '删除',
+                                        style: 'destructive',
+                                        onPress: () => {
+                                          const newLogs = habitLogs.filter(l => l.id !== log.id);
+                                          saveHabitLogs(newLogs);
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }}
+                                activeOpacity={0.6}
+                              >
+                                <Text style={styles.checkinHistoryDeleteText}>删除</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
                         ))}
                       </View>
                     );
