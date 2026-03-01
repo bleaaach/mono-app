@@ -44,6 +44,8 @@ import {
   AppleIcon,
   RunIcon,
   CloseIcon,
+  SparkleIcon,
+  CrownIcon,
 } from '../components/Icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -113,6 +115,8 @@ const ICON_COMPONENT_MAP: { [key: string]: React.FC<{ size?: number; color?: str
   'read': ReadIcon,
   'meditation': MeditationIcon,
   'other': OtherIcon,
+  'sparkle': SparkleIcon,
+  'crown': CrownIcon,
 };
 
 // 兼容旧数据的 emoji 映射 - 映射到 SVG 图标名称
@@ -1670,49 +1674,57 @@ export default function HabitScreen() {
                 <Text style={styles.sectionSubtitle}>同时维持多个习惯的成就</Text>
               </View>
               <View style={styles.masterAchievementsContainer}>
-                {masterAchievements.map((achievement: {id: string; name: string; description: string; icon: string; unlocked: boolean; progress: number; required: number; target: number}) => (
-                  <View 
-                    key={achievement.id} 
-                    style={[
-                      styles.masterAchievementItem,
-                      achievement.unlocked && styles.masterAchievementItemUnlocked
-                    ]}
-                  >
-                    <View style={styles.masterAchievementLeft}>
-                      <Text style={styles.masterAchievementIcon}>{achievement.icon}</Text>
-                      <View>
-                        <Text style={[
-                          styles.masterAchievementName,
-                          !achievement.unlocked && styles.masterAchievementNameLocked
-                        ]}>
-                          {achievement.name}
-                        </Text>
-                        <Text style={styles.masterAchievementDesc}>{achievement.description}</Text>
+                {masterAchievements.map((achievement: {id: string; name: string; description: string; icon: string; unlocked: boolean; progress: number; required: number; target: number}) => {
+                  const IconComponent = getIconComponent(achievement.icon);
+                  return (
+                    <View 
+                      key={achievement.id} 
+                      style={[
+                        styles.masterAchievementItem,
+                        achievement.unlocked && styles.masterAchievementItemUnlocked
+                      ]}
+                    >
+                      <View style={styles.masterAchievementLeft}>
+                        {IconComponent && (
+                          <IconComponent 
+                            size={28} 
+                            color={achievement.unlocked ? '#000000' : '#9CA3AF'} 
+                          />
+                        )}
+                        <View>
+                          <Text style={[
+                            styles.masterAchievementName,
+                            !achievement.unlocked && styles.masterAchievementNameLocked
+                          ]}>
+                            {achievement.name}
+                          </Text>
+                          <Text style={styles.masterAchievementDesc}>{achievement.description}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.masterAchievementRight}>
+                        {!achievement.unlocked ? (
+                          <View style={styles.masterAchievementProgress}>
+                            <View style={styles.masterAchievementProgressTrack}>
+                              <View 
+                                style={[
+                                  styles.masterAchievementProgressFill,
+                                  { width: `${(achievement.progress / achievement.target) * 100}%` }
+                                ]} 
+                              />
+                            </View>
+                            <Text style={styles.masterAchievementProgressText}>
+                              {achievement.progress}/{achievement.target}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.masterAchievementUnlockedBadge}>
+                            <CheckIcon size={14} color="#FFFFFF" />
+                          </View>
+                        )}
                       </View>
                     </View>
-                    <View style={styles.masterAchievementRight}>
-                      {!achievement.unlocked ? (
-                        <View style={styles.masterAchievementProgress}>
-                          <View style={styles.masterAchievementProgressTrack}>
-                            <View 
-                              style={[
-                                styles.masterAchievementProgressFill,
-                                { width: `${(achievement.progress / achievement.target) * 100}%` }
-                              ]} 
-                            />
-                          </View>
-                          <Text style={styles.masterAchievementProgressText}>
-                            {achievement.progress}/{achievement.target}
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={styles.masterAchievementUnlockedBadge}>
-                          <CheckIcon size={14} color="#FFFFFF" />
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </>
           );

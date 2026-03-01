@@ -477,6 +477,19 @@ export const SparkleIcon = ({ size = 24, color = "#000000" }: IconProps) => (
   </Svg>
 );
 
+export const CrownIcon = ({ size = 24, color = "#000000" }: IconProps) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M2 17L12 22L22 17V12L12 17L2 12V17Z"
+      fill={color}
+    />
+    <Path
+      d="M12 2L17 12H7L12 2Z"
+      fill={color}
+    />
+  </Svg>
+);
+
 // ==================== 活动图标 ====================
 
 export const CodeIcon = ({ size = 24, color = "#000000" }: IconProps) => (
@@ -1041,6 +1054,7 @@ const IconMap: { [key: string]: React.FC<IconProps> } = {
   'storm': StormMoodIcon,
   'peaceful': PeacefulMoodIcon,
   'sparkle': SparkleIcon,
+  'crown': CrownIcon,
   'code': CodeIcon,
   'game': GameIcon,
   'cook': CookIcon,
