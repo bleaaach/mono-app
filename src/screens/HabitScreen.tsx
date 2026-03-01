@@ -268,6 +268,7 @@ export default function HabitScreen() {
   const [showMakeupModal, setShowMakeupModal] = useState(false);
   const [makeupDate, setMakeupDate] = useState<string>('');
   const [makeupNote, setMakeupNote] = useState<string>('');
+  const [showMakeupDatePicker, setShowMakeupDatePicker] = useState(false);
 
   // 打卡备注弹窗状态
   const [showCheckinNoteModal, setShowCheckinNoteModal] = useState(false);
@@ -2471,14 +2472,33 @@ export default function HabitScreen() {
             <Text style={styles.makeupSubtitle}>为「{selectedHabit?.name}」补打过去的记录</Text>
             
             <Text style={styles.modalLabel}>选择日期（7天内）</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="例如：2026-02-20"
-              value={makeupDate}
-              onChangeText={setMakeupDate}
-            />
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowMakeupDatePicker(true)}
+            >
+              <Text style={makeupDate ? styles.datePickerText : styles.datePickerPlaceholder}>
+                {makeupDate ? formatDate(makeupDate) : '选择日期'}
+              </Text>
+            </TouchableOpacity>
+            {showMakeupDatePicker && (
+              <DateTimePicker
+                value={makeupDate ? new Date(makeupDate) : new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()}
+                onChange={(event, selectedDate) => {
+                  setShowMakeupDatePicker(false);
+                  if (selectedDate) {
+                    const year = selectedDate.getFullYear();
+                    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(selectedDate.getDate()).padStart(2, '0');
+                    setMakeupDate(`${year}-${month}-${day}`);
+                  }
+                }}
+              />
+            )}
             
-            <Text style={styles.modalLabel}>备注（可选）</Text>
+            <Text style={[styles.modalLabel, { marginTop: 16 }]}>备注（可选）</Text>
             <TextInput
               style={[styles.modalInput, styles.noteInput]}
               placeholder="添加备注..."
