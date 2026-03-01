@@ -12,13 +12,15 @@ import {
   Alert,
   Animated,
   RefreshControl,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
 import { Habit, HabitLog, HabitStats } from '../types';
 import { Colors } from '../constants/colors';
-import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory } from '../utils/storage';
+import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory, defaultCategoryOverrideStorage, DefaultCategoryOverride } from '../utils/storage';
 import { getTodayString, formatDate } from '../utils/date';
 import { generateId } from '../utils/id';
 import {
@@ -46,6 +48,9 @@ import {
   CloseIcon,
   SparkleIcon,
   CrownIcon,
+  TrendUpIcon,
+  TrendDownIcon,
+  TrendStableIcon,
 } from '../components/Icons';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -152,6 +157,78 @@ const HEATMAP_COLORS = {
 type TabType = 'overview' | 'habits' | 'insights' | 'archived';
 type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'custom';
 
+// ==================== 日历网格组件 ====================
+interface CalendarGridProps {
+  habit: Habit;
+  habitLogs: HabitLog[];
+  onDatePress: (habit: Habit, dateStr: string) => void;
+}
+
+const CalendarGrid: React.FC<CalendarGridProps> = ({ habit, habitLogs, onDatePress }) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = new Date(year, month, 1).getDay();
+  const todayDate = now.getDate();
+  
+  console.log('CalendarGrid render', { year, month: month + 1, daysInMonth, todayDate, now: now.toISOString() });
+
+  const days = [];
+
+  // 空白填充
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    days.push(<View key={`empty-${i}`} style={styles.calendarEmptyCell} />);
+  }
+
+  // 日期
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const log = habitLogs.find(l => l.habitId === habit.id && l.date === dateStr);
+    const isToday = day === todayDate;
+
+    const today3 = new Date();
+    today3.setHours(0, 0, 0, 0);
+    const cellDate = new Date(year, month, day);
+    cellDate.setHours(0, 0, 0, 0);
+    const diffTime = today3.getTime() - cellDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    const canCheckin = diffDays >= 0 && diffDays <= 30;
+    const isFuture = diffDays < 0;
+    
+    if (day <= 3) {
+      console.log('CalendarGrid day debug', { day, dateStr, today3: today3.toISOString(), cellDate: cellDate.toISOString(), diffDays, canCheckin, isFuture });
+    }
+
+    days.push(
+      <TouchableOpacity
+        key={day}
+        style={[
+          styles.calendarCell,
+          log?.completed && { backgroundColor: '#000000' },
+          isToday && styles.calendarCellToday,
+          !log?.completed && canCheckin && styles.calendarCellClickable,
+        ]}
+        onPress={() => {
+          console.log('CalendarGrid cell pressed', { day, dateStr, habitId: habit?.id });
+          onDatePress(habit, dateStr);
+        }}
+        disabled={isFuture || (!canCheckin && !log?.completed)}
+        activeOpacity={0.7}
+      >
+        <Text style={[
+          styles.calendarCellText,
+          log?.completed && styles.calendarCellTextCompleted,
+        ]}>
+          {day}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return <View style={styles.calendarGrid}>{days}</View>;
+};
+
 // ==================== 主组件 ====================
 
 export default function HabitScreen() {
@@ -176,11 +253,10 @@ export default function HabitScreen() {
   const [habitCategory, setHabitCategory] = useState('other');
   const [habitFrequency, setHabitFrequency] = useState<FrequencyType>('daily');
   const [habitFrequencyInterval, setHabitFrequencyInterval] = useState<number>(2);
-  const [habitTarget, setHabitTarget] = useState<'streak' | 'count' | 'none'>('streak');
+  const [habitTarget, setHabitTarget] = useState<'streak' | 'count' | 'none'>('none');
   const [habitTargetValue, setHabitTargetValue] = useState<number>(21);
   const [habitDeadline, setHabitDeadline] = useState<string>('');
-  const [habitTags, setHabitTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // 习惯详情弹窗状态
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -197,6 +273,14 @@ export default function HabitScreen() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState(HABIT_COLORS[0]);
 
+  // 默认分类覆盖（用户修改后的默认分类）
+  const [defaultCategoryOverrides, setDefaultCategoryOverrides] = useState<DefaultCategoryOverride[]>([]);
+  
+  // 编辑分类状态
+  const [editingCategory, setEditingCategory] = useState<{ id: string; name: string; color: string; isCustom: boolean } | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryColor, setEditCategoryColor] = useState(HABIT_COLORS[0]);
+
   // 下拉刷新状态
   const [refreshing, setRefreshing] = useState(false);
 
@@ -206,14 +290,16 @@ export default function HabitScreen() {
   const dragAnimatedValue = useRef(new Animated.Value(0)).current;
 
   const loadData = async () => {
-    const [habitsData, logsData, categoriesData] = await Promise.all([
+    const [habitsData, logsData, categoriesData, overridesData] = await Promise.all([
       habitStorage.get(),
       habitLogStorage.get(),
       customCategoryStorage.get(),
+      defaultCategoryOverrideStorage.get(),
     ]);
     if (habitsData) setHabits(habitsData);
     if (logsData) setHabitLogs(logsData);
     if (categoriesData) setCustomCategories(categoriesData);
+    if (overridesData) setDefaultCategoryOverrides(overridesData);
   };
 
   const onRefresh = useCallback(async () => {
@@ -222,20 +308,69 @@ export default function HabitScreen() {
     setRefreshing(false);
   }, []);
 
-  // 合并预设分类和自定义分类
+  // 合并预设分类和自定义分类（应用用户对默认分类的修改）
   const getAllCategories = () => {
-    const presetCategories = HABIT_CATEGORIES.map(cat => ({
-      id: cat.id,
-      name: cat.name,
-      color: cat.color,
-      icon: cat.iconComponent.name || cat.id,
-      isCustom: false,
-    }));
+    const presetCategories = HABIT_CATEGORIES.map(cat => {
+      const override = defaultCategoryOverrides.find(o => o.id === cat.id);
+      return {
+        id: cat.id,
+        name: override?.name ?? cat.name,
+        color: override?.color ?? cat.color,
+        icon: cat.iconComponent.name || cat.id,
+        isCustom: false,
+      };
+    });
     const customCats = customCategories.map(cat => ({
       ...cat,
       isCustom: true,
     }));
     return [...presetCategories, ...customCats];
+  };
+
+  // 获取默认分类的原始数据
+  const getDefaultCategoryBase = (id: string) => {
+    return HABIT_CATEGORIES.find(cat => cat.id === id);
+  };
+
+  // 获取完成率提示文本
+  const getCompletionRateLabel = (habit: Habit): string => {
+    const targetType = habit.target?.type || 'none';
+    switch (targetType) {
+      case 'streak':
+        return '连续';
+      case 'count':
+        return '累计';
+      default:
+        return '今日';
+    }
+  };
+
+  // 获取分类的显示信息（应用覆盖）
+  const getCategoryDisplayInfo = (id: string) => {
+    // 先检查是否是默认分类
+    const defaultCat = HABIT_CATEGORIES.find(cat => cat.id === id);
+    if (defaultCat) {
+      const override = defaultCategoryOverrides.find(o => o.id === id);
+      return {
+        id: defaultCat.id,
+        name: override?.name ?? defaultCat.name,
+        color: override?.color ?? defaultCat.color,
+        iconComponent: defaultCat.iconComponent,
+        isCustom: false,
+      };
+    }
+    // 检查是否是自定义分类
+    const customCat = customCategories.find(cat => cat.id === id);
+    if (customCat) {
+      return {
+        id: customCat.id,
+        name: customCat.name,
+        color: customCat.color,
+        iconComponent: OtherIcon,
+        isCustom: true,
+      };
+    }
+    return null;
   };
 
   useFocusEffect(
@@ -305,8 +440,23 @@ export default function HabitScreen() {
       longestStreak = Math.max(longestStreak, tempStreak, currentStreak);
     }
 
-    const daysSinceCreated = Math.max(1, Math.floor((new Date().getTime() - new Date(habit.createdAt).getTime()) / (1000 * 60 * 60 * 24)));
-    const completionRate = Math.round((totalCompletions / daysSinceCreated) * 100);
+    // 计算完成率：基于目标值
+    const targetValue = habit.target?.value || 1;
+    const targetType = habit.target?.type || 'none';
+    const todayLog = logs.find(log => log.date === getTodayString());
+    const todayCount = todayLog?.count || 0;
+    let completionRate = 0;
+    
+    if (targetType === 'streak') {
+      // 连续打卡目标：当前连续天数 / 目标天数
+      completionRate = Math.min(100, Math.round((currentStreak / targetValue) * 100));
+    } else if (targetType === 'count') {
+      // 累计打卡目标：总打卡次数 / 目标次数
+      completionRate = Math.min(100, Math.round((totalCompletions / targetValue) * 100));
+    } else {
+      // 无目标：基于今日完成情况
+      completionRate = Math.min(100, Math.round((todayCount / targetValue) * 100));
+    }
 
     const today2 = new Date();
     const currentDay = today2.getDay();
@@ -643,8 +793,6 @@ export default function HabitScreen() {
     setHabitTarget('streak');
     setHabitTargetValue(21);
     setHabitDeadline('');
-    setHabitTags([]);
-    setTagInput('');
     setShowModal(true);
   };
 
@@ -669,6 +817,64 @@ export default function HabitScreen() {
     setCustomCategories(customCategories.filter(c => c.id !== categoryId));
   };
 
+  // 开始编辑分类
+  const startEditCategory = (category: { id: string; name: string; color: string; isCustom: boolean }) => {
+    setEditingCategory(category);
+    setEditCategoryName(category.name);
+    setEditCategoryColor(category.color);
+  };
+
+  // 保存分类编辑
+  const handleSaveCategoryEdit = async () => {
+    if (!editingCategory || !editCategoryName.trim()) return;
+
+    if (editingCategory.isCustom) {
+      // 更新自定义分类
+      await customCategoryStorage.update(editingCategory.id, {
+        name: editCategoryName.trim(),
+        color: editCategoryColor,
+      });
+      setCustomCategories(customCategories.map(c =>
+        c.id === editingCategory.id
+          ? { ...c, name: editCategoryName.trim(), color: editCategoryColor }
+          : c
+      ));
+    } else {
+      // 更新默认分类覆盖
+      await defaultCategoryOverrideStorage.update({
+        id: editingCategory.id,
+        name: editCategoryName.trim(),
+        color: editCategoryColor,
+      });
+      setDefaultCategoryOverrides(prev => {
+        const existing = prev.find(o => o.id === editingCategory.id);
+        if (existing) {
+          return prev.map(o =>
+            o.id === editingCategory.id
+              ? { ...o, name: editCategoryName.trim(), color: editCategoryColor }
+              : o
+          );
+        }
+        return [...prev, { id: editingCategory.id, name: editCategoryName.trim(), color: editCategoryColor }];
+      });
+    }
+
+    setEditingCategory(null);
+    setEditCategoryName('');
+  };
+
+  // 取消编辑分类
+  const cancelEditCategory = () => {
+    setEditingCategory(null);
+    setEditCategoryName('');
+  };
+
+  // 重置默认分类为初始值
+  const handleResetDefaultCategory = async (categoryId: string) => {
+    await defaultCategoryOverrideStorage.remove(categoryId);
+    setDefaultCategoryOverrides(prev => prev.filter(o => o.id !== categoryId));
+  };
+
   const openEditModal = (habit: Habit) => {
     setEditingHabit(habit);
     setHabitName(habit.name);
@@ -680,8 +886,6 @@ export default function HabitScreen() {
     setHabitTarget(habit.target?.type || 'streak');
     setHabitTargetValue(habit.target?.value || 21);
     setHabitDeadline(habit.target?.deadline || '');
-    setHabitTags(habit.tags || []);
-    setTagInput('');
     setShowModal(true);
   };
 
@@ -715,7 +919,6 @@ export default function HabitScreen() {
               color: habitColor,
               icon: habitIcon,
               category: habitCategory,
-              tags: habitTags,
               frequency: frequencyConfig,
               target: targetConfig,
             }
@@ -731,7 +934,7 @@ export default function HabitScreen() {
         color: habitColor,
         icon: habitIcon,
         category: habitCategory,
-        tags: habitTags,
+        tags: [],
         frequency: frequencyConfig,
         target: targetConfig,
         reminders: [],
@@ -811,14 +1014,14 @@ export default function HabitScreen() {
       return;
     }
 
-    // 检查日期是否在7天内
+    // 检查日期是否在30天内
     const selectedDate = new Date(makeupDate);
     const today = new Date();
     const diffTime = today.getTime() - selectedDate.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays > 7) {
-      Alert.alert('提示', '只能补打7天内的记录');
+    if (diffDays > 30) {
+      Alert.alert('提示', '只能补打30天内的记录');
       return;
     }
 
@@ -852,6 +1055,74 @@ export default function HabitScreen() {
     await saveHabitLogs(newLogs);
     setShowMakeupModal(false);
     Alert.alert('成功', '补卡成功！');
+  };
+
+  // 点击日期格子补打卡/取消打卡
+  const handleDateCellPress = async (habit: Habit, dateStr: string) => {
+    console.log('handleDateCellPress called', { habitId: habit?.id, habitName: habit?.name, dateStr });
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const selectedDate = new Date(year, month - 1, day);
+    selectedDate.setHours(0, 0, 0, 0);
+    
+    const diffTime = today.getTime() - selectedDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    console.log('date calculation', { today: today.toISOString(), selectedDate: selectedDate.toISOString(), diffDays });
+
+    // 不能打卡未来日期
+    if (diffDays < 0) {
+      console.log('future date, returning');
+      return;
+    }
+
+    const existingLog = habitLogs.find(l => l.habitId === habit.id && l.date === dateStr);
+    console.log('existingLog', existingLog);
+
+    if (existingLog?.completed) {
+      // 已打卡 - 取消打卡
+      Alert.alert(
+        '取消打卡',
+        `确定要取消 ${formatDate(dateStr)} 的打卡记录吗？`,
+        [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '确定',
+            style: 'destructive',
+            onPress: async () => {
+              const newLogs = habitLogs.filter(l => l.id !== existingLog.id);
+              await saveHabitLogs(newLogs);
+            },
+          },
+        ]
+      );
+    } else {
+      // 未打卡 - 补打卡
+      // 检查是否超过30天
+      if (diffDays > 30) {
+        Alert.alert('提示', '只能补打30天内的记录');
+        return;
+      }
+
+      const newLog: HabitLog = {
+        id: generateId(),
+        habitId: habit.id,
+        date: dateStr,
+        completed: true,
+        count: 1,
+        isMakeup: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      const newLogs = existingLog
+        ? habitLogs.map(l => l.id === existingLog.id ? newLog : l)
+        : [...habitLogs, newLog];
+
+      await saveHabitLogs(newLogs);
+    }
   };
 
   // ==================== 拖拽排序功能 ====================
@@ -1064,8 +1335,8 @@ export default function HabitScreen() {
         }
       >
         {/* 分类筛选 */}
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.categoryFilter}
           contentContainerStyle={styles.categoryFilterContent}
@@ -1078,8 +1349,10 @@ export default function HabitScreen() {
               全部
             </Text>
           </TouchableOpacity>
-          {HABIT_CATEGORIES.map(cat => {
-            const IconComp = cat.iconComponent;
+          {getAllCategories().map(cat => {
+            const IconComp = cat.isCustom
+              ? OtherIcon
+              : (HABIT_CATEGORIES.find(c => c.id === cat.id)?.iconComponent || OtherIcon);
             return (
               <TouchableOpacity
                 key={cat.id}
@@ -1087,7 +1360,11 @@ export default function HabitScreen() {
                 onPress={() => setSelectedCategory(cat.id)}
               >
                 <View style={styles.categoryChipIcon}>
-                  <IconComp size={14} color={selectedCategory === cat.id ? '#FFFFFF' : cat.color} />
+                  {cat.isCustom ? (
+                    <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
+                  ) : (
+                    <IconComp size={14} color={selectedCategory === cat.id ? '#FFFFFF' : cat.color} />
+                  )}
                 </View>
                 <Text style={[styles.categoryChipText, selectedCategory === cat.id && styles.categoryChipTextActive]}>
                   {cat.name}
@@ -1096,11 +1373,6 @@ export default function HabitScreen() {
             );
           })}
         </ScrollView>
-
-        {/* 拖拽排序提示 */}
-        <View style={styles.dragHintContainer}>
-          <Text style={styles.dragHintText}>长按并拖动可排序习惯</Text>
-        </View>
 
         {/* 习惯列表 */}
         {sortedHabits.map((habit, index) => {
@@ -1172,26 +1444,40 @@ export default function HabitScreen() {
                 {/* 30天打卡网格 */}
                 <View style={styles.miniGrid}>
                   {Array.from({ length: 30 }).map((_, idx) => {
-                    const logIndex = recentLogs.length - 30 + idx;
-                    const log = logIndex >= 0 ? recentLogs[logIndex] : null;
+                    const today4 = new Date();
+                    today4.setHours(0, 0, 0, 0);
+                    const date = new Date(today4);
+                    date.setDate(today4.getDate() - (29 - idx));
+                    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    const log = habitLogs.find(l => l.habitId === habit.id && l.date === dateStr);
                     const isToday = idx === 29;
+                    const diffDays = 29 - idx;
+                    const canCheckin = diffDays >= 0 && diffDays <= 30;
+                    const isFuture = diffDays < 0;
 
                     return (
-                      <View
+                      <TouchableOpacity
                         key={idx}
                         style={[
                           styles.miniGridCell,
                           log?.completed && { backgroundColor: habit.paused ? '#9CA3AF' : '#000000' },
                           !log?.completed && { backgroundColor: '#F5F5F5' },
                           isToday && styles.miniGridCellToday,
+                          !log?.completed && canCheckin && styles.miniGridCellClickable,
                         ]}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          handleDateCellPress(habit, dateStr);
+                        }}
+                        disabled={isFuture || (!canCheckin && !log?.completed) || habit.paused}
+                        activeOpacity={0.7}
                       />
                     );
                   })}
                 </View>
 
                 <View style={styles.habitListFooter}>
-                  <Text style={styles.habitListFooterText}>完成率 {stats.completionRate}%</Text>
+                  <Text style={styles.habitListFooterText}>{getCompletionRateLabel(habit)}完成率 {stats.completionRate}%</Text>
                   <Text style={styles.habitListFooterText}>总打卡 {stats.totalCompletions} 次</Text>
                   <Text style={styles.habitListFooterText}>最长 {stats.longestStreak} 天</Text>
                 </View>
@@ -1245,7 +1531,7 @@ export default function HabitScreen() {
               </View>
 
               <View style={styles.habitListFooter}>
-                <Text style={styles.habitListFooterText}>完成率 {stats.completionRate}%</Text>
+                <Text style={styles.habitListFooterText}>{getCompletionRateLabel(habit)}完成率 {stats.completionRate}%</Text>
                 <Text style={styles.habitListFooterText}>总打卡 {stats.totalCompletions} 次</Text>
                 <Text style={styles.habitListFooterText}>最长 {stats.longestStreak} 天</Text>
               </View>
@@ -1831,7 +2117,11 @@ export default function HabitScreen() {
                 <Text style={styles.sectionSubtitle}>基于历史数据的智能预测</Text>
               </View>
               <View style={styles.predictionCard}>
-                {predictions.slice(0, 3).map((pred: {habitName: string; trend: string; probability: number; confidence: number; todayProbability: number; suggestion: string}, index: number) => (
+                {predictions.slice(0, 3).map((pred: {habitName: string; trend: string; probability: number; confidence: number; todayProbability: number; suggestion: string}, index: number) => {
+                  const displayProbability = Math.min(pred.todayProbability, 100);
+                  const barColor = displayProbability >= 70 ? Colors.gray[900] : 
+                                   displayProbability >= 40 ? Colors.gray[600] : Colors.gray[400];
+                  return (
                   <View key={index} style={styles.predictionItem}>
                     <View style={styles.predictionHeader}>
                       <Text style={styles.predictionHabitName}>{pred.habitName}</Text>
@@ -1840,9 +2130,13 @@ export default function HabitScreen() {
                         pred.trend === 'declining' ? styles.predictionTrendDown :
                         styles.predictionTrendStable
                       ]}>
-                        <Text style={styles.predictionTrendText}>
-                          {pred.trend === 'improving' ? '↑' : pred.trend === 'declining' ? '↓' : '→'}
-                        </Text>
+                        {pred.trend === 'improving' ? (
+                          <TrendUpIcon size={14} color={Colors.primary} />
+                        ) : pred.trend === 'declining' ? (
+                          <TrendDownIcon size={14} color={Colors.gray[600]} />
+                        ) : (
+                          <TrendStableIcon size={14} color={Colors.gray[500]} />
+                        )}
                       </View>
                     </View>
                     <View style={styles.predictionBarContainer}>
@@ -1851,9 +2145,8 @@ export default function HabitScreen() {
                           style={[
                             styles.predictionBarFill, 
                             { 
-                              width: `${pred.todayProbability}%`,
-                              backgroundColor: pred.todayProbability >= 70 ? '#22C55E' : 
-                                              pred.todayProbability >= 40 ? '#F59E0B' : '#EF4444'
+                              width: `${displayProbability}%`,
+                              backgroundColor: barColor
                             }
                           ]} 
                         />
@@ -1862,7 +2155,7 @@ export default function HabitScreen() {
                     </View>
                     <Text style={styles.predictionSuggestion}>{pred.suggestion}</Text>
                   </View>
-                ))}
+                );})}
               </View>
             </>
           );
@@ -1966,16 +2259,22 @@ export default function HabitScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.categoryGrid}>
-                {HABIT_CATEGORIES.map(cat => {
-                  const IconComp = cat.iconComponent;
+                {getAllCategories().map(cat => {
+                  const IconComp = cat.isCustom
+                    ? OtherIcon
+                    : (HABIT_CATEGORIES.find(c => c.id === cat.id)?.iconComponent || OtherIcon);
                   return (
                     <TouchableOpacity
                       key={cat.id}
                       style={[styles.categoryOption, habitCategory === cat.id && styles.categoryOptionActive]}
                       onPress={() => setHabitCategory(cat.id)}
                     >
-                      <View style={styles.categoryOptionIcon}>
-                        <IconComp size={14} color={habitCategory === cat.id ? '#FFFFFF' : cat.color} />
+                      <View style={[styles.categoryOptionIcon, cat.isCustom && { backgroundColor: cat.color + '20' }]}>
+                        {cat.isCustom ? (
+                          <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
+                        ) : (
+                          <IconComp size={14} color={habitCategory === cat.id ? '#FFFFFF' : cat.color} />
+                        )}
                       </View>
                       <Text style={[styles.categoryOptionText, habitCategory === cat.id && styles.categoryOptionTextActive]}>
                         {cat.name}
@@ -1983,20 +2282,6 @@ export default function HabitScreen() {
                     </TouchableOpacity>
                   );
                 })}
-                {customCategories.map(cat => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.categoryOption, habitCategory === cat.id && styles.categoryOptionActive]}
-                    onPress={() => setHabitCategory(cat.id)}
-                  >
-                    <View style={[styles.categoryOptionIcon, { backgroundColor: cat.color + '20' }]}>
-                      <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
-                    </View>
-                    <Text style={[styles.categoryOptionText, habitCategory === cat.id && styles.categoryOptionTextActive]}>
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
               </View>
 
               {/* 频率选择 */}
@@ -2080,49 +2365,44 @@ export default function HabitScreen() {
                 </View>
               )}
 
-              {/* 截止日期输入 */}
+              {/* 截止日期选择 */}
               <Text style={styles.modalLabel}>截止日期（可选）</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="例如：2026-12-31"
-                value={habitDeadline}
-                onChangeText={setHabitDeadline}
-              />
-
-              {/* 标签输入 */}
-              <Text style={styles.modalLabel}>标签</Text>
-              <View style={styles.tagInputContainer}>
-                <TextInput
-                  style={styles.tagInput}
-                  placeholder="输入标签后按回车添加"
-                  value={tagInput}
-                  onChangeText={setTagInput}
-                  onSubmitEditing={() => {
-                    if (tagInput.trim() && !habitTags.includes(tagInput.trim())) {
-                      setHabitTags([...habitTags, tagInput.trim()]);
-                      setTagInput('');
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={habitDeadline ? styles.datePickerText : styles.datePickerPlaceholder}>
+                  {habitDeadline ? formatDate(habitDeadline) : '选择日期'}
+                </Text>
+                {habitDeadline ? (
+                  <TouchableOpacity
+                    style={styles.clearDateButton}
+                    onPress={() => setHabitDeadline('')}
+                  >
+                    <CloseIcon size={16} color={Colors.gray[400]} />
+                  </TouchableOpacity>
+                ) : null}
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={habitDeadline ? new Date(habitDeadline) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  minimumDate={new Date()}
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) {
+                      const year = selectedDate.getFullYear();
+                      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(selectedDate.getDate()).padStart(2, '0');
+                      setHabitDeadline(`${year}-${month}-${day}`);
                     }
                   }}
                 />
-              </View>
-              {habitTags.length > 0 && (
-                <View style={styles.tagList}>
-                  {habitTags.map((tag, index) => (
-                    <View key={index} style={styles.tagItem}>
-                      <Text style={styles.tagText}>{tag}</Text>
-                      <TouchableOpacity
-                        onPress={() => setHabitTags(habitTags.filter((_, i) => i !== index))}
-                        style={styles.tagRemoveButton}
-                      >
-                        <Text style={styles.tagRemoveText}>×</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
               )}
 
               {/* 颜色选择 */}
-              <Text style={styles.modalLabel}>颜色标记</Text>
+              <Text style={[styles.modalLabel, { marginTop: 16 }]}>颜色标记</Text>
               <View style={styles.colorGrid}>
                 {HABIT_COLORS.map(color => (
                   <TouchableOpacity
@@ -2212,7 +2492,7 @@ export default function HabitScreen() {
                   <View style={styles.detailHeaderInfo}>
                     <Text style={styles.detailTitle}>{selectedHabit.name}</Text>
                     <Text style={styles.detailMeta}>
-                      {HABIT_CATEGORIES.find(c => c.id === selectedHabit.category)?.name || '其他'} • {formatFrequency(selectedHabit)}
+                      {getCategoryDisplayInfo(selectedHabit.category)?.name || '其他'} • {formatFrequency(selectedHabit)}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -2247,55 +2527,18 @@ export default function HabitScreen() {
                     <Text style={[styles.detailStatValue, { color: '#000000' }]}>
                       {getHabitStats(selectedHabit).completionRate}%
                     </Text>
-                    <Text style={styles.detailStatLabel}>完成率</Text>
+                    <Text style={styles.detailStatLabel}>{getCompletionRateLabel(selectedHabit)}完成率</Text>
                   </View>
                 </View>
 
                 {/* 月度日历 */}
                 <View style={styles.detailSection}>
                   <Text style={styles.detailSectionTitle}>本月打卡</Text>
-                  <View style={styles.calendarGrid}>
-                    {(() => {
-                      const today2 = new Date();
-                      const year = today2.getFullYear();
-                      const month = today2.getMonth();
-                      const daysInMonth = new Date(year, month + 1, 0).getDate();
-                      const firstDayOfWeek = new Date(year, month, 1).getDay();
-                      const days = [];
-                      
-                      // 空白填充
-                      for (let i = 0; i < firstDayOfWeek; i++) {
-                        days.push(<View key={`empty-${i}`} style={styles.calendarEmptyCell} />);
-                      }
-                      
-                      // 日期
-                      for (let day = 1; day <= daysInMonth; day++) {
-                        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                        const log = habitLogs.find(l => l.habitId === selectedHabit.id && l.date === dateStr);
-                        const isToday = day === today2.getDate();
-                        
-                        days.push(
-                          <View 
-                            key={day} 
-                            style={[
-                              styles.calendarCell,
-                              log?.completed && { backgroundColor: '#000000' },
-                              isToday && styles.calendarCellToday,
-                            ]}
-                          >
-                            <Text style={[
-                              styles.calendarCellText,
-                              log?.completed && styles.calendarCellTextCompleted,
-                            ]}>
-                              {day}
-                            </Text>
-                          </View>
-                        );
-                      }
-                      
-                      return days;
-                    })()}
-                  </View>
+                  <CalendarGrid 
+                    habit={selectedHabit}
+                    habitLogs={habitLogs}
+                    onDatePress={handleDateCellPress}
+                  />
                 </View>
 
                 {/* 近30天趋势 */}
@@ -2486,71 +2729,184 @@ export default function HabitScreen() {
         visible={showCategoryModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowCategoryModal(false)}
+        onRequestClose={() => {
+          setShowCategoryModal(false);
+          setEditingCategory(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.categoryModalContent}>
             <View style={styles.categoryModalHeader}>
               <Text style={styles.modalTitle}>管理分类</Text>
-              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowCategoryModal(false);
+                setEditingCategory(null);
+              }}>
                 <CloseIcon size={24} color={Colors.gray[500]} />
               </TouchableOpacity>
             </View>
-            
-            {/* 添加新分类 */}
-            <View style={styles.addCategorySection}>
-              <Text style={styles.modalLabel}>添加新分类</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="分类名称"
-                value={newCategoryName}
-                onChangeText={setNewCategoryName}
-              />
-              <Text style={styles.modalLabel}>选择颜色</Text>
-              <View style={styles.colorGrid}>
-                {HABIT_COLORS.map(color => (
-                  <TouchableOpacity
-                    key={color}
-                    style={[
-                      styles.colorOption,
-                      { backgroundColor: color },
-                      newCategoryColor === color && styles.colorOptionActive
-                    ]}
-                    onPress={() => setNewCategoryColor(color)}
-                  />
-                ))}
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* 添加新分类 */}
+              <View style={styles.addCategorySection}>
+                <Text style={[styles.modalLabel, { marginBottom: 4 }]}>添加新分类</Text>
+                <TextInput
+                  style={[styles.modalInput, { marginBottom: 8 }]}
+                  placeholder="输入分类名称"
+                  value={newCategoryName}
+                  onChangeText={setNewCategoryName}
+                />
+                <Text style={[styles.modalLabel, { marginBottom: 8 }]}>选择颜色</Text>
+                <View style={styles.colorGrid}>
+                  {HABIT_COLORS.map(color => (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        newCategoryColor === color && styles.colorOptionActive
+                      ]}
+                      onPress={() => setNewCategoryColor(color)}
+                    />
+                  ))}
+                </View>
+                <TouchableOpacity
+                  style={[styles.modalButtonConfirm, { marginTop: 8 }, !newCategoryName.trim() && styles.modalButtonDisabled]}
+                  onPress={handleAddCategory}
+                  disabled={!newCategoryName.trim()}
+                >
+                  <Text style={styles.modalButtonConfirmText}>添加分类</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity 
-                style={[styles.modalButtonConfirm, !newCategoryName.trim() && styles.modalButtonDisabled]}
-                onPress={handleAddCategory}
-                disabled={!newCategoryName.trim()}
-              >
-                <Text style={styles.modalButtonConfirmText}>添加分类</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {/* 自定义分类列表 */}
-            <Text style={styles.modalLabel}>我的分类</Text>
-            {customCategories.length === 0 ? (
-              <Text style={styles.emptyCategoryText}>暂无自定义分类</Text>
-            ) : (
-              <View style={styles.customCategoryList}>
-                {customCategories.map(cat => (
-                  <View key={cat.id} style={styles.customCategoryItem}>
-                    <View style={styles.customCategoryInfo}>
-                      <View style={[styles.customCategoryColorDot, { backgroundColor: cat.color }]} />
-                      <Text style={styles.customCategoryName}>{cat.name}</Text>
-                    </View>
-                    <TouchableOpacity 
-                      style={styles.deleteCategoryButton}
-                      onPress={() => handleDeleteCategory(cat.id)}
-                    >
-                      <Text style={styles.deleteCategoryButtonText}>删除</Text>
+
+              {/* 编辑分类弹窗内嵌区域 */}
+              {editingCategory && (
+                <View style={styles.editCategorySection}>
+                  <View style={styles.editCategoryHeader}>
+                    <Text style={[styles.modalLabel, { marginBottom: 0 }]}>
+                      编辑{editingCategory.isCustom ? '自定义' : '默认'}分类
+                    </Text>
+                    <TouchableOpacity onPress={cancelEditCategory}>
+                      <CloseIcon size={20} color={Colors.gray[500]} />
                     </TouchableOpacity>
                   </View>
-                ))}
+                  <TextInput
+                    style={[styles.modalInput, { marginBottom: 8 }]}
+                    placeholder="分类名称"
+                    value={editCategoryName}
+                    onChangeText={setEditCategoryName}
+                  />
+                  <Text style={[styles.modalLabel, { marginBottom: 8 }]}>选择颜色</Text>
+                  <View style={styles.colorGrid}>
+                    {HABIT_COLORS.map(color => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          editCategoryColor === color && styles.colorOptionActive
+                        ]}
+                        onPress={() => setEditCategoryColor(color)}
+                      />
+                    ))}
+                  </View>
+                  <View style={[styles.editCategoryActions, { marginTop: 8 }]}>
+                    <TouchableOpacity
+                      style={[styles.modalButtonSecondary, { flex: 1 }]}
+                      onPress={cancelEditCategory}
+                    >
+                      <Text style={styles.modalButtonSecondaryText}>取消</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButtonConfirm, { flex: 1 }, !editCategoryName.trim() && styles.modalButtonDisabled]}
+                      onPress={handleSaveCategoryEdit}
+                      disabled={!editCategoryName.trim()}
+                    >
+                      <Text style={styles.modalButtonConfirmText}>保存</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* 默认分类列表 */}
+              <Text style={styles.modalLabel}>默认分类（点击编辑）</Text>
+              <View style={styles.customCategoryList}>
+                {HABIT_CATEGORIES.map(cat => {
+                  const override = defaultCategoryOverrides.find(o => o.id === cat.id);
+                  const displayName = override?.name ?? cat.name;
+                  const displayColor = override?.color ?? cat.color;
+                  const isModified = !!override;
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={styles.customCategoryItem}
+                      onPress={() => startEditCategory({
+                        id: cat.id,
+                        name: displayName,
+                        color: displayColor,
+                        isCustom: false
+                      })}
+                    >
+                      <View style={styles.customCategoryInfo}>
+                        <View style={[styles.customCategoryColorDot, { backgroundColor: displayColor }]} />
+                        <View>
+                          <Text style={styles.customCategoryName}>{displayName}</Text>
+                          {isModified && (
+                            <Text style={styles.categoryModifiedHint}>已修改</Text>
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.categoryItemActions}>
+                        {isModified && (
+                          <TouchableOpacity
+                            style={styles.resetCategoryButton}
+                            onPress={() => handleResetDefaultCategory(cat.id)}
+                          >
+                            <Text style={styles.resetCategoryButtonText}>重置</Text>
+                          </TouchableOpacity>
+                        )}
+                        <Text style={styles.editCategoryHint}>编辑</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-            )}
+
+              {/* 自定义分类列表 */}
+              <Text style={styles.modalLabel}>我的分类</Text>
+              {customCategories.length === 0 ? (
+                <Text style={styles.emptyCategoryText}>暂无自定义分类</Text>
+              ) : (
+                <View style={styles.customCategoryList}>
+                  {customCategories.map(cat => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={styles.customCategoryItem}
+                      onPress={() => startEditCategory({
+                        id: cat.id,
+                        name: cat.name,
+                        color: cat.color,
+                        isCustom: true
+                      })}
+                    >
+                      <View style={styles.customCategoryInfo}>
+                        <View style={[styles.customCategoryColorDot, { backgroundColor: cat.color }]} />
+                        <Text style={styles.customCategoryName}>{cat.name}</Text>
+                      </View>
+                      <View style={styles.categoryItemActions}>
+                        <TouchableOpacity
+                          style={styles.deleteCategoryButton}
+                          onPress={() => handleDeleteCategory(cat.id)}
+                        >
+                          <Text style={styles.deleteCategoryButtonText}>删除</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.editCategoryHint}>编辑</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -3052,6 +3408,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#000000',
   },
+  miniGridCellClickable: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
   habitListFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -3509,13 +3869,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   predictionTrendUp: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: Colors.gray[100],
   },
   predictionTrendDown: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: Colors.gray[100],
   },
   predictionTrendStable: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: Colors.gray[100],
   },
   predictionTrendText: {
     fontSize: 12,
@@ -3530,7 +3890,7 @@ const styles = StyleSheet.create({
   predictionBarTrack: {
     flex: 1,
     height: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: Colors.gray[100],
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -3572,11 +3932,12 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   modalLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-    marginBottom: 12,
-    marginTop: 16,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   modalInput: {
     fontSize: 16,
@@ -3585,6 +3946,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     color: '#000000',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  datePickerText: {
+    fontSize: 16,
+    color: '#000000',
+  },
+  datePickerPlaceholder: {
+    fontSize: 16,
+    color: '#9CA3AF',
+  },
+  clearDateButton: {
+    padding: 4,
   },
   iconGrid: {
     flexDirection: 'row',
@@ -3655,8 +4038,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '80%',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+    maxHeight: '85%',
   },
   categoryModalHeader: {
     flexDirection: 'row',
@@ -3671,55 +4056,10 @@ const styles = StyleSheet.create({
   },
   addCategorySection: {
     marginBottom: 24,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  // 标签样式
-  tagInputContainer: {
-    marginBottom: 8,
-  },
-  tagInput: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
+    padding: 16,
     backgroundColor: '#FAFAFA',
-  },
-  tagList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  tagItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 6,
-  },
-  tagText: {
-    fontSize: 13,
-    color: '#4F46E5',
-    fontWeight: '500',
-  },
-  tagRemoveButton: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#C7D2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagRemoveText: {
-    fontSize: 12,
-    color: '#4F46E5',
-    fontWeight: '600',
-    lineHeight: 16,
+    borderRadius: 12,
+    gap: 12,
   },
   modalButtonDisabled: {
     backgroundColor: '#E5E7EB',
@@ -3731,15 +4071,18 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   customCategoryList: {
-    gap: 8,
+    gap: 10,
+    marginBottom: 16,
   },
   customCategoryItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    padding: 14,
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   customCategoryInfo: {
     flexDirection: 'row',
@@ -3764,6 +4107,50 @@ const styles = StyleSheet.create({
   deleteCategoryButtonText: {
     fontSize: 13,
     color: '#EF4444',
+    fontWeight: '500',
+  },
+  editCategorySection: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    gap: 12,
+  },
+  editCategoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  editCategoryActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  categoryItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editCategoryHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginLeft: 4,
+  },
+  categoryModifiedHint: {
+    fontSize: 11,
+    color: '#22c55e',
+    marginTop: 2,
+  },
+  resetCategoryButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+  },
+  resetCategoryButtonText: {
+    fontSize: 12,
+    color: '#374151',
     fontWeight: '500',
   },
   frequencyButtons: {
@@ -3851,6 +4238,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  modalButtonSecondary: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  modalButtonSecondaryText: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+    textAlign: 'center',
   },
   // 快速统计卡片
   quickStatsRow: {
@@ -4022,6 +4421,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
   },
+  calendarCellClickable: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+  },
   trend30Chart: {
     flexDirection: 'row',
     height: 40,
@@ -4071,33 +4474,43 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   detailActions: {
-    paddingTop: 16,
-    gap: 12,
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    gap: 10,
   },
   detailActionButton: {
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
     paddingVertical: 14,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     alignItems: 'center',
-  },
-  detailActionButtonActive: {
-    backgroundColor: '#F3F4F6',
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  detailActionButtonActive: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#D1D5DB',
   },
   detailActionButtonDanger: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
   },
   detailActionButtonText: {
-    fontSize: 16,
-    color: '#FFFFFF',
+    fontSize: 15,
+    color: '#374151',
     fontWeight: '500',
   },
   detailActionButtonTextActive: {
     color: '#000000',
+    fontWeight: '600',
   },
   detailActionButtonTextDanger: {
-    color: '#EF4444',
+    color: '#DC2626',
+    fontWeight: '600',
   },
   // 自定义频率间隔输入
   intervalInputContainer: {
@@ -4249,19 +4662,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E8E93',
     marginBottom: 16,
-  },
-  // 拖拽排序提示
-  dragHintContainer: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-    alignSelf: 'flex-start',
-  },
-  dragHintText: {
-    fontSize: 12,
-    color: '#6B7280',
   },
   // 补卡弹窗
   makeupModalContent: {

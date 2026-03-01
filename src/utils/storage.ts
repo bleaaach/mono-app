@@ -125,6 +125,13 @@ export interface CustomCategory {
   createdAt: string;
 }
 
+// 默认分类修改类型
+export interface DefaultCategoryOverride {
+  id: string;
+  name?: string;
+  color?: string;
+}
+
 // 自定义分类存储
 export const customCategoryStorage = {
   get: (): Promise<CustomCategory[] | null> => storage.get<CustomCategory[]>(KEYS.CUSTOM_CATEGORIES),
@@ -144,6 +151,39 @@ export const customCategoryStorage = {
   remove: async (categoryId: string): Promise<void> => {
     const categories = await customCategoryStorage.get() || [];
     await customCategoryStorage.set(categories.filter(c => c.id !== categoryId));
+  },
+  // 更新自定义分类
+  update: async (categoryId: string, data: Partial<CustomCategory>): Promise<void> => {
+    const categories = await customCategoryStorage.get() || [];
+    const index = categories.findIndex(c => c.id === categoryId);
+    if (index !== -1) {
+      categories[index] = { ...categories[index], ...data };
+      await customCategoryStorage.set(categories);
+    }
+  },
+};
+
+// 默认分类修改存储
+const DEFAULT_CATEGORY_OVERRIDES_KEY = '@mono:default_category_overrides';
+
+export const defaultCategoryOverrideStorage = {
+  get: (): Promise<DefaultCategoryOverride[] | null> => storage.get<DefaultCategoryOverride[]>(DEFAULT_CATEGORY_OVERRIDES_KEY),
+  set: (value: DefaultCategoryOverride[]) => storage.set(DEFAULT_CATEGORY_OVERRIDES_KEY, value),
+  // 更新或添加默认分类的覆盖
+  update: async (override: DefaultCategoryOverride): Promise<void> => {
+    const overrides = await defaultCategoryOverrideStorage.get() || [];
+    const index = overrides.findIndex(o => o.id === override.id);
+    if (index !== -1) {
+      overrides[index] = { ...overrides[index], ...override };
+    } else {
+      overrides.push(override);
+    }
+    await defaultCategoryOverrideStorage.set(overrides);
+  },
+  // 删除默认分类的覆盖（恢复默认）
+  remove: async (categoryId: string): Promise<void> => {
+    const overrides = await defaultCategoryOverrideStorage.get() || [];
+    await defaultCategoryOverrideStorage.set(overrides.filter(o => o.id !== categoryId));
   },
 };
 
