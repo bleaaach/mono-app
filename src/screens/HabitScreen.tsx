@@ -2733,43 +2733,50 @@ export default function HabitScreen() {
                     
                     return (
                       <View style={styles.checkinHistoryList}>
-                        {logs.map(log => (
-                          <View key={log.id} style={styles.checkinHistoryItem}>
-                            <View style={styles.checkinHistoryItemLeft}>
-                              <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
-                              {log.note && (
-                                <Text style={styles.checkinHistoryNote} numberOfLines={1}>
-                                  {log.note}
-                                </Text>
-                              )}
+                        {logs.map(log => {
+                          const handleDeleteLog = () => {
+                            const logId = log.id;
+                            const logDate = log.date;
+                            Alert.alert(
+                              '删除打卡记录',
+                              `确定要删除 ${formatDate(logDate)} 的打卡记录吗？`,
+                              [
+                                { text: '取消', style: 'cancel' },
+                                {
+                                  text: '删除',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    const newLogs = habitLogs.filter(l => l.id !== logId);
+                                    await saveHabitLogs(newLogs);
+                                  },
+                                },
+                              ]
+                            );
+                          };
+                          
+                          return (
+                            <View key={log.id} style={styles.checkinHistoryItem}>
+                              <View style={styles.checkinHistoryItemLeft}>
+                                <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
+                                {log.note && (
+                                  <Text style={styles.checkinHistoryNote} numberOfLines={1}>
+                                    {log.note}
+                                  </Text>
+                                )}
+                              </View>
+                              <View style={styles.checkinHistoryItemRight}>
+                                <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
+                                <TouchableOpacity
+                                  style={styles.checkinHistoryDelete}
+                                  onPress={handleDeleteLog}
+                                  activeOpacity={0.6}
+                                >
+                                  <Text style={styles.checkinHistoryDeleteText}>删除</Text>
+                                </TouchableOpacity>
+                              </View>
                             </View>
-                            <View style={styles.checkinHistoryItemRight}>
-                              <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
-                              <TouchableOpacity
-                                style={styles.checkinHistoryDelete}
-                                onPress={() => {
-                                  Alert.alert(
-                                    '删除打卡记录',
-                                    `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
-                                    [
-                                      { text: '取消', style: 'cancel' },
-                                      {
-                                        text: '删除',
-                                        style: 'destructive',
-                                        onPress: async () => {
-                                          const newLogs = habitLogs.filter(l => l.id !== log.id);
-                                          await saveHabitLogs(newLogs);
-                                        },
-                                      },
-                                    ]
-                                  );
-                                }}
-                              >
-                                <Text style={styles.checkinHistoryDeleteText}>删除</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        ))}
+                          );
+                        })}
                       </View>
                     );
                   })()}
@@ -4708,10 +4715,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   checkinHistoryDelete: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: '#FEE2E2',
     borderRadius: 6,
+    minWidth: 50,
+    alignItems: 'center',
   },
   checkinHistoryDeleteText: {
     fontSize: 12,
