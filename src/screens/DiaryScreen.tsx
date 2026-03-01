@@ -27,6 +27,7 @@ import { PieChart } from 'react-native-chart-kit';
 import { DiaryEntry, DiaryEditHistory, CustomMood, MoodAnalysis } from '../types';
 import { Colors } from '../constants/colors';
 import { diaryStorage } from '../utils/storage';
+import { diaryEvents, DIARY_EVENTS, setPendingEditEntry, getPendingEditEntry } from '../utils/events';
 import { getTodayString, formatDate, generateId } from '../utils/date';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import {
@@ -262,9 +263,41 @@ export default function DiaryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadEntries();
+      loadEntries().then(() => {
+        const pendingId = getPendingEditEntry();
+        if (pendingId) {
+          setTimeout(() => {
+            const entry = entries.find(e => e.id === pendingId);
+            if (entry) {
+              openEditor(entry);
+            } else {
+              loadEntries().then(() => {
+                const entries2 = entries;
+                const entry2 = entries2.find(e => e.id === pendingId);
+                if (entry2) {
+                  openEditor(entry2);
+                }
+              });
+            }
+          }, 100);
+        }
+      });
     }, [])
   );
+
+  useEffect(() => {
+    const handleEditEntry = (entryId: string) => {
+      const entry = entries.find(e => e.id === entryId);
+      if (entry) {
+        openEditor(entry);
+      }
+    };
+
+    diaryEvents.on(DIARY_EVENTS.EDIT_ENTRY, handleEditEntry);
+    return () => {
+      diaryEvents.off(DIARY_EVENTS.EDIT_ENTRY, handleEditEntry);
+    };
+  }, [entries]);
 
   // 保存数据
   const saveEntries = async (newEntries: DiaryEntry[]) => {
@@ -766,7 +799,7 @@ export default function DiaryScreen() {
       .slice(0, 20);
   }, [entries]);
 
-  // 生成年报数据
+  // 生成年报数据（增强版）
   const getYearlyReport = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -775,28 +808,157 @@ export default function DiaryScreen() {
     if (yearEntries.length === 0) return null;
 
     const monthlyCount = Array(12).fill(0);
+    const monthlyMoodIntensity = Array(12).fill(null).map(() => ({ sum: 0, count: 0 }));
+    const hourlyCount = Array(24).fill(0);
+    const weekdayCount = Array(7).fill(0);
+    
     yearEntries.forEach(e => {
-      const month = new Date(e.date).getMonth();
+      const date = new Date(e.date);
+      const month = date.getMonth();
+      const hour = date.getHours();
+      const day = date.getDay();
+      
       monthlyCount[month]++;
+      hourlyCount[hour]++;
+      weekdayCount[day]++;
+      
+      if (e.moodIntensity) {
+        monthlyMoodIntensity[month].sum += e.moodIntensity;
+        monthlyMoodIntensity[month].count++;
+      }
     });
 
     const moodDist: Record<string, number> = {};
+    const tagDist: Record<string, number> = {};
+    const moodIntensityByMood: Record<string, { sum: number; count: number }> = {};
+    
     yearEntries.forEach(e => {
       const mood = e.mood || 'cloudy';
       moodDist[mood] = (moodDist[mood] || 0) + 1;
+      
+      if (e.moodIntensity) {
+        if (!moodIntensityByMood[mood]) {
+          moodIntensityByMood[mood] = { sum: 0, count: 0 };
+        }
+        moodIntensityByMood[mood].sum += e.moodIntensity;
+        moodIntensityByMood[mood].count++;
+      }
+      
+      e.tags?.forEach(tag => {
+        tagDist[tag] = (tagDist[tag] || 0) + 1;
+      });
     });
 
     const totalWords = yearEntries.reduce((sum, e) => sum + (e.wordCount || e.content.length), 0);
+    const avgWordsPerEntry = Math.round(totalWords / yearEntries.length);
     const favoriteMonth = monthlyCount.indexOf(Math.max(...monthlyCount));
+    
+    const uniqueDays = new Set(yearEntries.map(e => e.date.split('T')[0]));
+    const writingDaysRatio = Math.round((uniqueDays.size / 365) * 100);
+
+    const sortedByWords = [...yearEntries].sort((a, b) => 
+      (b.wordCount || b.content.length) - (a.wordCount || a.content.length)
+    );
+    const longestEntry = sortedByWords[0];
+
+    const sortedByMoodIntensity = yearEntries
+      .filter(e => e.moodIntensity && e.mood)
+      .sort((a, b) => (b.moodIntensity || 0) - (a.moodIntensity || 0));
+    const bestMoodEntry = sortedByMoodIntensity[0];
+
+    let currentStreak = 0;
+    let maxStreak = 0;
+    const sortedDates = [...uniqueDays].sort();
+    for (let i = 0; i < sortedDates.length; i++) {
+      if (i === 0) {
+        currentStreak = 1;
+      } else {
+        const prevDate = new Date(sortedDates[i - 1]);
+        const currDate = new Date(sortedDates[i]);
+        const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays === 1) {
+          currentStreak++;
+        } else {
+          currentStreak = 1;
+        }
+      }
+      maxStreak = Math.max(maxStreak, currentStreak);
+    }
+
+    const weekdayTotal = weekdayCount[1] + weekdayCount[2] + weekdayCount[3] + weekdayCount[4] + weekdayCount[5];
+    const weekendTotal = weekdayCount[0] + weekdayCount[6];
+    const weekdayAvg = weekdayTotal / 5;
+    const weekendAvg = weekendTotal / 2;
+
+    const peakHour = hourlyCount.indexOf(Math.max(...hourlyCount));
+    let writingPeriod = '深夜';
+    if (peakHour >= 6 && peakHour < 12) writingPeriod = '早晨';
+    else if (peakHour >= 12 && peakHour < 18) writingPeriod = '下午';
+    else if (peakHour >= 18 && peakHour < 22) writingPeriod = '晚上';
+
+    const firstHalf = monthlyCount.slice(0, 6).reduce((a, b) => a + b, 0);
+    const secondHalf = monthlyCount.slice(6).reduce((a, b) => a + b, 0);
+    let writingTrend = '稳定';
+    if (secondHalf > firstHalf * 1.2) writingTrend = '递增';
+    else if (secondHalf < firstHalf * 0.8) writingTrend = '递减';
+
+    const monthlyAvgIntensity = monthlyMoodIntensity.map(m => 
+      m.count > 0 ? m.sum / m.count : 0
+    );
+    const validMonths = monthlyAvgIntensity.filter(v => v > 0);
+    const avgIntensity = validMonths.length > 0 
+      ? validMonths.reduce((a, b) => a + b, 0) / validMonths.length 
+      : 0;
+    const intensityVariance = validMonths.length > 1
+      ? Math.sqrt(validMonths.reduce((sum, v) => sum + Math.pow(v - avgIntensity, 2), 0) / validMonths.length)
+      : 0;
+    
+    const bestMoodMonth = monthlyAvgIntensity.indexOf(Math.max(...monthlyAvgIntensity));
+    const worstMoodMonth = monthlyAvgIntensity.indexOf(Math.min(...monthlyAvgIntensity.filter(v => v > 0)));
+
+    const topTags = Object.entries(tagDist)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
 
     return {
       year: currentYear,
       totalEntries: yearEntries.length,
       totalWords,
+      avgWordsPerEntry,
+      writingDaysRatio,
       monthlyCount,
       moodDist,
+      moodIntensityByMood,
       favoriteMonth,
       firstEntry: yearEntries[yearEntries.length - 1]?.date,
+      longestEntry: longestEntry ? {
+        date: longestEntry.date,
+        wordCount: longestEntry.wordCount || longestEntry.content.length,
+        preview: longestEntry.content.slice(0, 50),
+      } : null,
+      bestMoodEntry: bestMoodEntry ? {
+        date: bestMoodEntry.date,
+        mood: bestMoodEntry.mood,
+        moodIntensity: bestMoodEntry.moodIntensity,
+      } : null,
+      maxStreak,
+      writingPeriod,
+      peakHour,
+      writingTrend,
+      weekdayVsWeekend: {
+        weekday: weekdayTotal,
+        weekend: weekendTotal,
+        weekdayAvg: weekdayAvg.toFixed(1),
+        weekendAvg: weekendAvg.toFixed(1),
+        preference: weekdayAvg > weekendAvg ? '工作日' : weekendAvg > weekdayAvg ? '周末' : '均衡'
+      },
+      moodTrend: {
+        monthlyAvgIntensity,
+        bestMonth: bestMoodMonth >= 0 ? bestMoodMonth : null,
+        worstMonth: worstMoodMonth >= 0 ? worstMoodMonth : null,
+        volatility: intensityVariance.toFixed(2),
+      },
+      topTags,
     };
   }, [entries]);
 
@@ -1283,6 +1445,7 @@ export default function DiaryScreen() {
         {yearlyReportData && (
           <View style={styles.statsSection}>
             <Text style={styles.statsSectionTitle}>{yearlyReportData.year}年度回顾</Text>
+            
             <View style={styles.yearlyReportCard}>
               <View style={styles.yearlyReportStats}>
                 <View style={styles.yearlyReportStat}>
@@ -1298,8 +1461,34 @@ export default function DiaryScreen() {
                   <Text style={styles.yearlyReportLabel}>字数</Text>
                 </View>
                 <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.favoriteMonth + 1}月</Text>
-                  <Text style={styles.yearlyReportLabel}>最活跃</Text>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.avgWordsPerEntry}</Text>
+                  <Text style={styles.yearlyReportLabel}>字/篇</Text>
+                </View>
+                <View style={styles.yearlyReportStat}>
+                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.writingDaysRatio}%</Text>
+                  <Text style={styles.yearlyReportLabel}>天数占比</Text>
+                </View>
+              </View>
+
+              <View style={styles.yearlyInsightSection}>
+                <Text style={styles.yearlyInsightTitle}>写作规律</Text>
+                <View style={styles.yearlyInsightGrid}>
+                  <View style={styles.yearlyInsightItem}>
+                    <Ionicons name="time-outline" size={18} color="#666" />
+                    <Text style={styles.yearlyInsightText}>最爱在{yearlyReportData.writingPeriod}写作</Text>
+                  </View>
+                  <View style={styles.yearlyInsightItem}>
+                    <Ionicons name="trending-up-outline" size={18} color={yearlyReportData.writingTrend === '递增' ? '#34C759' : yearlyReportData.writingTrend === '递减' ? '#FF3B30' : '#666'} />
+                    <Text style={styles.yearlyInsightText}>写作频率{yearlyReportData.writingTrend}</Text>
+                  </View>
+                  <View style={styles.yearlyInsightItem}>
+                    <Ionicons name="calendar-outline" size={18} color="#666" />
+                    <Text style={styles.yearlyInsightText}>{yearlyReportData.weekdayVsWeekend.preference}更爱记录</Text>
+                  </View>
+                  <View style={styles.yearlyInsightItem}>
+                    <Ionicons name="flame-outline" size={18} color="#FF9500" />
+                    <Text style={styles.yearlyInsightText}>最长连续{yearlyReportData.maxStreak}天</Text>
+                  </View>
                 </View>
               </View>
 
@@ -1324,6 +1513,92 @@ export default function DiaryScreen() {
                   </View>
                 </View>
               )}
+
+              {yearlyReportData.moodTrend && yearlyReportData.moodTrend.bestMonth !== null && (
+                <View style={styles.yearlyInsightSection}>
+                  <Text style={styles.yearlyInsightTitle}>情绪趋势</Text>
+                  <View style={styles.yearlyInsightGrid}>
+                    {yearlyReportData.moodTrend.bestMonth !== null && (
+                      <View style={styles.yearlyInsightItem}>
+                        <Ionicons name="happy-outline" size={18} color="#34C759" />
+                        <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.bestMonth + 1}月心情最佳</Text>
+                      </View>
+                    )}
+                    {yearlyReportData.moodTrend.worstMonth !== null && (
+                      <View style={styles.yearlyInsightItem}>
+                        <Ionicons name="sad-outline" size={18} color="#FF3B30" />
+                        <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.worstMonth + 1}月情绪低谷</Text>
+                      </View>
+                    )}
+                    <View style={styles.yearlyInsightItem}>
+                      <Ionicons name="analytics-outline" size={18} color="#666" />
+                      <Text style={styles.yearlyInsightText}>情绪波动指数 {yearlyReportData.moodTrend.volatility}</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {(yearlyReportData.longestEntry || yearlyReportData.bestMoodEntry) && (
+                <View style={styles.yearlyInsightSection}>
+                  <Text style={styles.yearlyInsightTitle}>年度亮点</Text>
+                  {yearlyReportData.longestEntry && (
+                    <View style={styles.yearlyHighlightCard}>
+                      <View style={styles.yearlyHighlightHeader}>
+                        <Ionicons name="document-text-outline" size={16} color="#000" />
+                        <Text style={styles.yearlyHighlightLabel}>最长日记</Text>
+                      </View>
+                      <Text style={styles.yearlyHighlightDate}>{yearlyReportData.longestEntry.date}</Text>
+                      <Text style={styles.yearlyHighlightContent} numberOfLines={2}>
+                        {yearlyReportData.longestEntry.preview}...
+                      </Text>
+                      <Text style={styles.yearlyHighlightMeta}>{yearlyReportData.longestEntry.wordCount} 字</Text>
+                    </View>
+                  )}
+                  {yearlyReportData.bestMoodEntry && (
+                    <View style={styles.yearlyHighlightCard}>
+                      <View style={styles.yearlyHighlightHeader}>
+                        {React.createElement(getMoodDisplay(yearlyReportData.bestMoodEntry.mood).iconComponent, { size: 16, color: '#000' })}
+                        <Text style={styles.yearlyHighlightLabel}>心情最好的一天</Text>
+                      </View>
+                      <Text style={styles.yearlyHighlightDate}>{yearlyReportData.bestMoodEntry.date}</Text>
+                      <Text style={styles.yearlyHighlightMeta}>
+                        {getMoodDisplay(yearlyReportData.bestMoodEntry.mood).label} · 强度 {yearlyReportData.bestMoodEntry.moodIntensity}/5
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {yearlyReportData.topTags && yearlyReportData.topTags.length > 0 && (
+                <View style={styles.yearlyInsightSection}>
+                  <Text style={styles.yearlyInsightTitle}>年度标签</Text>
+                  <View style={styles.yearlyTagsContainer}>
+                    {yearlyReportData.topTags.map(([tag, count]) => (
+                      <View key={tag} style={styles.yearlyTagItem}>
+                        <Text style={styles.yearlyTagName}>#{tag}</Text>
+                        <Text style={styles.yearlyTagCount}>{count}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              <View style={styles.yearlyMonthChart}>
+                <Text style={styles.yearlyInsightTitle}>月度写作分布</Text>
+                <View style={styles.yearlyMonthBars}>
+                  {yearlyReportData.monthlyCount.map((count, index) => {
+                    const maxCount = Math.max(...yearlyReportData.monthlyCount, 1);
+                    const height = Math.max(4, (count / maxCount) * 60);
+                    return (
+                      <View key={index} style={styles.yearlyMonthBarWrapper}>
+                        <Text style={styles.yearlyMonthBarCount}>{count || ''}</Text>
+                        <View style={[styles.yearlyMonthBar, { height }]} />
+                        <Text style={styles.yearlyMonthBarLabel}>{index + 1}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
             </View>
           </View>
         )}
@@ -2541,6 +2816,124 @@ const styles = StyleSheet.create({
     color: '#999999',
     textAlign: 'center',
     marginTop: 8,
+  },
+  yearlyInsightSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  yearlyInsightTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 12,
+  },
+  yearlyInsightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  yearlyInsightItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F8F8F8',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  yearlyInsightText: {
+    fontSize: 13,
+    color: '#333333',
+  },
+  yearlyHighlightCard: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
+  },
+  yearlyHighlightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  yearlyHighlightLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  yearlyHighlightDate: {
+    fontSize: 12,
+    color: '#999999',
+    marginBottom: 6,
+  },
+  yearlyHighlightContent: {
+    fontSize: 14,
+    color: '#333333',
+    lineHeight: 20,
+    marginBottom: 6,
+  },
+  yearlyHighlightMeta: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  yearlyTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  yearlyTagItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  yearlyTagName: {
+    fontSize: 13,
+    color: '#333333',
+  },
+  yearlyTagCount: {
+    fontSize: 12,
+    color: '#999999',
+  },
+  yearlyMonthChart: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  yearlyMonthBars: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 90,
+    paddingHorizontal: 4,
+  },
+  yearlyMonthBarWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    height: '100%',
+  },
+  yearlyMonthBarCount: {
+    fontSize: 10,
+    color: '#999999',
+    marginBottom: 2,
+  },
+  yearlyMonthBar: {
+    width: 16,
+    backgroundColor: '#000000',
+    borderRadius: 4,
+    minHeight: 4,
+  },
+  yearlyMonthBarLabel: {
+    fontSize: 10,
+    color: '#999999',
+    marginTop: 4,
   },
   modalOverlay: {
     flex: 1,

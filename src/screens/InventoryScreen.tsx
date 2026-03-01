@@ -1877,16 +1877,8 @@ export default function InventoryScreen() {
       {/* 头部 */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          {currentView === 'home' ? (
-            <>
-              <Text style={styles.headerTitle}>收纳</Text>
-              <Text style={styles.headerSubtitle}>管理你的物品</Text>
-            </>
-          ) : (
-            <TouchableOpacity onPress={() => setCurrentView('home')}>
-              <Text style={styles.backButton}>← 返回</Text>
-            </TouchableOpacity>
-          )}
+          <Text style={styles.headerTitle}>收纳</Text>
+          <Text style={styles.headerSubtitle}>管理你的物品</Text>
         </View>
         
         <View style={styles.headerActions}>

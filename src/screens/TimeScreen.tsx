@@ -11,7 +11,9 @@ import {
   ScrollView,
   Dimensions,
   Alert,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { TimeEntry, Activity, ActivityGroup, TimeGoal, Todo, Habit, HabitLog, TimeLinks } from '../types';
@@ -107,9 +109,11 @@ const TIME_TABS = [
   { key: 'history', label: '记录' },
 ] as const;
 
-// 时间输入选择器选项
-const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
-const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+const getTimeDate = (hour: string, minute: string): Date => {
+  const d = new Date();
+  d.setHours(parseInt(hour), parseInt(minute), 0, 0);
+  return d;
+};
 
 export default function TimeScreen() {
   // 数据状态
@@ -150,6 +154,8 @@ export default function TimeScreen() {
   const [entryEndHour, setEntryEndHour] = useState('10');
   const [entryEndMinute, setEntryEndMinute] = useState('00');
   const [entryNote, setEntryNote] = useState('');
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
   // 分组管理
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -1400,61 +1406,51 @@ export default function TimeScreen() {
               {/* 开始时间 */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>开始时间</Text>
-                <View style={styles.timePicker}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                    {HOURS.map(h => (
-                      <TouchableOpacity
-                        key={`start-h-${h}`}
-                        style={[styles.timeOption, entryStartHour === h && styles.timeOptionActive]}
-                        onPress={() => setEntryStartHour(h)}
-                      >
-                        <Text style={[styles.timeOptionText, entryStartHour === h && styles.timeOptionTextActive]}>{h}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  <Text style={styles.timeSeparator}>:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                    {MINUTES.map(m => (
-                      <TouchableOpacity
-                        key={`start-m-${m}`}
-                        style={[styles.timeOption, entryStartMinute === m && styles.timeOptionActive]}
-                        onPress={() => setEntryStartMinute(m)}
-                      >
-                        <Text style={[styles.timeOptionText, entryStartMinute === m && styles.timeOptionTextActive]}>{m}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                <TouchableOpacity 
+                  style={styles.timeInputButton}
+                  onPress={() => setShowStartTimePicker(true)}
+                >
+                  <Text style={styles.timeInputText}>{entryStartHour}:{entryStartMinute}</Text>
+                </TouchableOpacity>
+                {showStartTimePicker && (
+                  <DateTimePicker
+                    value={getTimeDate(entryStartHour, entryStartMinute)}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      setShowStartTimePicker(Platform.OS === 'ios');
+                      if (selectedDate) {
+                        setEntryStartHour(String(selectedDate.getHours()).padStart(2, '0'));
+                        setEntryStartMinute(String(selectedDate.getMinutes()).padStart(2, '0'));
+                      }
+                    }}
+                  />
+                )}
               </View>
 
               {/* 结束时间 */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>结束时间</Text>
-                <View style={styles.timePicker}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                    {HOURS.map(h => (
-                      <TouchableOpacity
-                        key={`end-h-${h}`}
-                        style={[styles.timeOption, entryEndHour === h && styles.timeOptionActive]}
-                        onPress={() => setEntryEndHour(h)}
-                      >
-                        <Text style={[styles.timeOptionText, entryEndHour === h && styles.timeOptionTextActive]}>{h}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  <Text style={styles.timeSeparator}>:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                    {MINUTES.map(m => (
-                      <TouchableOpacity
-                        key={`end-m-${m}`}
-                        style={[styles.timeOption, entryEndMinute === m && styles.timeOptionActive]}
-                        onPress={() => setEntryEndMinute(m)}
-                      >
-                        <Text style={[styles.timeOptionText, entryEndMinute === m && styles.timeOptionTextActive]}>{m}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                <TouchableOpacity 
+                  style={styles.timeInputButton}
+                  onPress={() => setShowEndTimePicker(true)}
+                >
+                  <Text style={styles.timeInputText}>{entryEndHour}:{entryEndMinute}</Text>
+                </TouchableOpacity>
+                {showEndTimePicker && (
+                  <DateTimePicker
+                    value={getTimeDate(entryEndHour, entryEndMinute)}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      setShowEndTimePicker(Platform.OS === 'ios');
+                      if (selectedDate) {
+                        setEntryEndHour(String(selectedDate.getHours()).padStart(2, '0'));
+                        setEntryEndMinute(String(selectedDate.getMinutes()).padStart(2, '0'));
+                      }
+                    }}
+                  />
+                )}
               </View>
 
               {/* 备注 */}
@@ -2307,39 +2303,19 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontWeight: '500',
   },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  timeInputButton: {
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
-    padding: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: Colors.gray[200],
   },
-  timeScroll: {
-    maxHeight: 120,
-  },
-  timeOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginHorizontal: 2,
-    borderRadius: 8,
-  },
-  timeOptionActive: {
-    backgroundColor: Colors.primary,
-  },
-  timeOptionText: {
-    fontSize: 16,
+  timeInputText: {
+    fontSize: 18,
     color: Colors.text,
+    fontWeight: '500',
     fontVariant: ['tabular-nums'],
-  },
-  timeOptionTextActive: {
-    color: Colors.background,
-    fontWeight: '600',
-  },
-  timeSeparator: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.text,
-    marginHorizontal: 8,
   },
   noteInput: {
     height: 60,

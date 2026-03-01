@@ -8,11 +8,14 @@ import {
   PanResponder,
   Dimensions,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { DiaryEntry } from '../../types';
-import { diaryStorage } from '../../utils/storage';
+import { diaryStorage, diaryFavoriteStorage } from '../../utils/storage';
+import { setPendingEditEntry } from '../../utils/events';
 import {
   SunnyMoodIcon,
   CloudyMoodIcon,
@@ -53,6 +56,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
   const [config, setConfig] = useState<RandomWalkConfig>({});
   const [showConfig, setShowConfig] = useState(false);
   const [specialMode, setSpecialMode] = useState<'normal' | 'today' | 'mood' | 'capsule'>('normal');
+  const [isFavorite, setIsFavorite] = useState(false);
   
   const pan = useState(new Animated.ValueXY())[0];
   const fadeAnim = useState(new Animated.Value(1))[0];
@@ -61,6 +65,12 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
   useEffect(() => {
     loadEntries();
   }, []);
+
+  useEffect(() => {
+    if (currentEntry) {
+      diaryFavoriteStorage.isFavorite(currentEntry.id).then(setIsFavorite);
+    }
+  }, [currentEntry]);
 
   const loadEntries = async () => {
     const data = await diaryStorage.get();
@@ -386,13 +396,15 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
       <View style={styles.footer}>
         <TouchableOpacity 
           style={styles.footerBtn}
-          onPress={() => {
-            // 收藏功能
-            Alert.alert('成功', '已收藏这篇日记');
+          onPress={async () => {
+            if (!currentEntry) return;
+            const newFavoriteStatus = await diaryFavoriteStorage.toggle(currentEntry.id);
+            setIsFavorite(newFavoriteStatus);
+            Alert.alert(newFavoriteStatus ? '已收藏' : '已取消收藏', newFavoriteStatus ? '这篇日记已添加到收藏' : '已从收藏中移除');
           }}
         >
-          <Ionicons name="heart-outline" size={22} color="#333" />
-          <Text style={styles.footerBtnText}>收藏</Text>
+          <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={22} color={isFavorite ? "#FF3B30" : "#333"} />
+          <Text style={[styles.footerBtnText, isFavorite && { color: "#FF3B30" }]}>{isFavorite ? '已收藏' : '收藏'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -406,11 +418,10 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
         <TouchableOpacity 
           style={styles.footerBtn}
           onPress={() => {
-            // 编辑
-            navigation.navigate('Diary', { 
-              screen: 'Timeline',
-              params: { editEntryId: currentEntry.id }
-            });
+            if (currentEntry) {
+              setPendingEditEntry(currentEntry.id);
+              navigation.navigate('Main');
+            }
           }}
         >
           <Ionicons name="create-outline" size={22} color="#333" />

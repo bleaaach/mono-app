@@ -14,9 +14,15 @@ import { DiaryEntry } from '../../types';
 import { diaryStorage } from '../../utils/storage';
 
 const { width, height } = Dimensions.get('window');
-const BOOK_WIDTH = width - 48;
+const isSmallScreen = width < 375 || height < 700;
+const BOOK_WIDTH = width - (isSmallScreen ? 24 : 48);
 const PAGE_WIDTH = (BOOK_WIDTH - 32) / 2;
-const PAGE_HEIGHT = height * 0.58;
+const PAGE_HEIGHT = height * (isSmallScreen ? 0.55 : 0.58);
+const CONTENT_FONT_SIZE = isSmallScreen ? 12 : 13;
+const CONTENT_LINE_HEIGHT = isSmallScreen ? 18 : 20;
+const PAGE_PADDING = isSmallScreen ? 12 : 16;
+const HEADER_MARGIN = isSmallScreen ? 8 : 12;
+const FOOTER_MARGIN = isSmallScreen ? 8 : 12;
 
 // 极简心情符号
 const MOOD_SYMBOLS: Record<string, string> = {
@@ -324,7 +330,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: isSmallScreen ? 12 : 24,
   },
   bookCover: {
     width: BOOK_WIDTH,
@@ -332,7 +338,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A',
     borderRadius: 4,
     flexDirection: 'row',
-    padding: 12,
+    padding: isSmallScreen ? 8 : 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.15,
@@ -340,10 +346,10 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   bookSpine: {
-    width: 20,
+    width: isSmallScreen ? 16 : 20,
     backgroundColor: '#0A0A0A',
     borderRadius: 2,
-    marginRight: 6,
+    marginRight: isSmallScreen ? 4 : 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -355,7 +361,7 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: '#FAFAFA',
-    padding: 16,
+    padding: PAGE_PADDING,
   },
   leftPage: {
     borderTopLeftRadius: 2,
@@ -370,7 +376,7 @@ const styles = StyleSheet.create({
     borderLeftColor: '#E5E5E5',
   },
   bookBinding: {
-    width: 6,
+    width: isSmallScreen ? 4 : 6,
     backgroundColor: '#E5E5E5',
   },
   pageLayers: {
@@ -394,18 +400,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 8,
+    marginBottom: HEADER_MARGIN,
+    paddingBottom: 6,
     borderBottomWidth: 0.5,
     borderBottomColor: '#E0E0E0',
   },
   pageDate: {
-    fontSize: 11,
+    fontSize: isSmallScreen ? 10 : 11,
     color: '#666',
     letterSpacing: 0.5,
   },
   bookmarkIcon: {
-    fontSize: 12,
+    fontSize: isSmallScreen ? 11 : 12,
     color: '#CCC',
   },
   bookmarkActive: {
@@ -415,8 +421,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   diaryText: {
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: CONTENT_FONT_SIZE,
+    lineHeight: CONTENT_LINE_HEIGHT,
     color: '#333',
     letterSpacing: 0.3,
   },
@@ -424,17 +430,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 8,
+    marginTop: FOOTER_MARGIN,
+    paddingTop: 6,
     borderTopWidth: 0.5,
     borderTopColor: '#E0E0E0',
   },
   moodSymbol: {
-    fontSize: 14,
+    fontSize: isSmallScreen ? 12 : 14,
     color: '#666',
   },
   pageNumber: {
-    fontSize: 10,
+    fontSize: isSmallScreen ? 9 : 10,
     color: '#999',
   },
   emptyPage: {
@@ -452,13 +458,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 32,
-    paddingVertical: 24,
+    gap: isSmallScreen ? 20 : 32,
+    paddingVertical: isSmallScreen ? 16 : 24,
   },
   navBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: isSmallScreen ? 40 : 44,
+    height: isSmallScreen ? 40 : 44,
+    borderRadius: isSmallScreen ? 20 : 22,
     backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
@@ -475,29 +481,29 @@ const styles = StyleSheet.create({
     color: '#CCC',
   },
   pageIndicator: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: isSmallScreen ? 14 : 20,
+    paddingVertical: isSmallScreen ? 6 : 8,
     backgroundColor: '#F5F5F5',
-    borderRadius: 16,
+    borderRadius: isSmallScreen ? 12 : 16,
   },
   pageIndicatorText: {
-    fontSize: 13,
+    fontSize: isSmallScreen ? 12 : 13,
     color: '#666',
     letterSpacing: 1,
   },
   leftTouchArea: {
     position: 'absolute',
     left: 0,
-    top: 80,
-    bottom: 100,
+    top: isSmallScreen ? 60 : 80,
+    bottom: isSmallScreen ? 80 : 100,
     width: width * 0.2,
     zIndex: 1,
   },
   rightTouchArea: {
     position: 'absolute',
     right: 0,
-    top: 80,
-    bottom: 100,
+    top: isSmallScreen ? 60 : 80,
+    bottom: isSmallScreen ? 80 : 100,
     width: width * 0.2,
     zIndex: 1,
   },

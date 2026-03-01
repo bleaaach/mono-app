@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,23 @@ import {
   Alert,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
+import { captureRef } from 'react-native-view-shot';
+import { toPng } from 'html-to-image';
 import { DiaryEntry } from '../../types';
 import ShareCard, { ShareTemplate } from '../../components/diary/ShareCard';
 import { diaryStorage } from '../../utils/storage';
 import { RootStackParamList } from '../../navigation/AppNavigator';
 
 const { width } = Dimensions.get('window');
+const CARD_WIDTH = width - 48;
 
 const TEMPLATES: { key: ShareTemplate; label: string; icon: string }[] = [
   { key: 'minimal', label: '极简', icon: 'square-outline' },
@@ -37,10 +44,10 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ShareTemplate>('minimal');
   const [caption, setCaption] = useState('');
   const [contentRange, setContentRange] = useState<'full' | 'summary'>('full');
-  const [summaryStart, setSummaryStart] = useState(0);
-  const [summaryEnd, setSummaryEnd] = useState(100);
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 100 });
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const shareCardRef = useRef<View>(null);
 
   React.useEffect(() => {
     loadEntry();
@@ -60,8 +67,8 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
   const getDisplayEntry = (): DiaryEntry | null => {
     if (!entry) return null;
     if (contentRange === 'full') return entry;
-    const start = Math.min(summaryStart, summaryEnd);
-    const end = Math.max(summaryStart, summaryEnd);
+    const start = Math.min(selection.start, selection.end);
+    const end = Math.max(selection.start, selection.end);
     const selectedContent = entry.content.substring(start, end);
     return {
       ...entry,
@@ -70,34 +77,99 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
   };
 
   const handleSaveImage = async () => {
+    if (!shareCardRef.current) return;
+    
     setIsLoading(true);
-    // 模拟保存图片
-    setTimeout(() => {
+    try {
+      if (Platform.OS === 'web') {
+        const element = shareCardRef.current as unknown as HTMLElement;
+        const dataUrl = await toPng(element, {
+          quality: 1,
+          pixelRatio: 2,
+        });
+        
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `diary-${entry?.date || 'share'}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        Alert.alert('成功', '分享卡片已下载');
+      } else {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('权限不足', '需要相册权限才能保存图片');
+          return;
+        }
+        
+        const uri = await captureRef(shareCardRef.current, {
+          format: 'png',
+          quality: 1,
+          result: 'tmpfile',
+        });
+        
+        await MediaLibrary.saveToLibraryAsync(uri);
+        Alert.alert('成功', '分享卡片已保存到相册');
+      }
+    } catch (error) {
+      console.error('Save image error:', error);
+      Alert.alert('错误', '保存图片失败，请重试');
+    } finally {
       setIsLoading(false);
-      Alert.alert('成功', '分享卡片已保存到相册');
-    }, 1000);
+    }
   };
 
-  const handleCopyText = () => {
+  const handleCopyText = async () => {
     const displayEntry = getDisplayEntry();
     if (!displayEntry) return;
     
     const text = `${displayEntry.date}\n${displayEntry.content}\n\n${displayEntry.tags?.map(t => `#${t}`).join(' ') || ''}\n\n${caption || ''}`;
     
-    // 使用 Clipboard API
-    if (Platform.OS === 'web') {
-      navigator.clipboard.writeText(text);
-    }
+    await Clipboard.setStringAsync(text);
     Alert.alert('成功', '文本已复制到剪贴板');
   };
 
   const handleShare = async () => {
+    if (!shareCardRef.current) return;
+    
     setIsLoading(true);
-    // 模拟分享
-    setTimeout(() => {
+    try {
+      if (Platform.OS === 'web') {
+        const text = `${entry?.date}\n${entry?.content}\n\n${entry?.tags?.map(t => `#${t}`).join(' ') || ''}`;
+        if (navigator.share) {
+          await navigator.share({
+            title: '日记分享',
+            text: text,
+          });
+        } else {
+          await handleCopyText();
+        }
+      } else {
+        const uri = await captureRef(shareCardRef.current, {
+          format: 'png',
+          quality: 1,
+          result: 'tmpfile',
+        });
+        
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: '分享日记',
+          });
+        } else {
+          Alert.alert('错误', '当前设备不支持分享功能');
+        }
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      if ((error as Error).name !== 'AbortError') {
+        Alert.alert('错误', '分享失败，请重试');
+      }
+    } finally {
       setIsLoading(false);
-      Alert.alert('成功', '分享成功！');
-    }, 1000);
+    }
   };
 
   const displayEntry = getDisplayEntry();
@@ -137,11 +209,13 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
       >
         {/* 预览卡片 */}
         <View style={styles.previewContainer}>
-          <ShareCard 
-            entry={displayEntry} 
-            template={selectedTemplate} 
-            caption={caption || undefined}
-          />
+          <View ref={shareCardRef} collapsable={false}>
+            <ShareCard 
+              entry={displayEntry} 
+              template={selectedTemplate} 
+              caption={caption || undefined}
+            />
+          </View>
         </View>
 
         {/* 模板选择 */}
@@ -215,89 +289,51 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
           {contentRange === 'summary' && entry && (
             <View style={styles.summarySelector}>
               <Text style={styles.summaryHint}>
-                选择要分享的内容范围（共 {entry.content.length} 字）
+                在下方文本中划选要分享的内容（共 {entry.content.length} 字）
               </Text>
               
-              {/* 范围选择器 */}
-              <View style={styles.rangeInputs}>
-                <View style={styles.rangeInputWrapper}>
-                  <Text style={styles.rangeInputLabel}>起始</Text>
-                  <TextInput
-                    style={styles.rangeInput}
-                    value={String(summaryStart)}
-                    onChangeText={(text) => {
-                      const num = parseInt(text) || 0;
-                      setSummaryStart(Math.max(0, Math.min(num, entry.content.length)));
-                    }}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <Text style={styles.rangeSeparator}>-</Text>
-                <View style={styles.rangeInputWrapper}>
-                  <Text style={styles.rangeInputLabel}>结束</Text>
-                  <TextInput
-                    style={styles.rangeInput}
-                    value={String(summaryEnd)}
-                    onChangeText={(text) => {
-                      const num = parseInt(text) || 0;
-                      setSummaryEnd(Math.max(0, Math.min(num, entry.content.length)));
-                    }}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
+              {/* 可划选的文本区域 */}
+              <TextInput
+                style={styles.selectableText}
+                value={entry.content}
+                multiline
+                editable={false}
+                selection={selection}
+                onSelectionChange={(e) => {
+                  const { start, end } = e.nativeEvent.selection;
+                  setSelection({ start, end });
+                }}
+              />
               
-              {/* 预览选中的内容 */}
-              <View style={styles.summaryPreview}>
-                <Text style={styles.summaryPreviewLabel}>选中内容预览：</Text>
-                <Text style={styles.summaryPreviewText} numberOfLines={5}>
-                  {entry.content.substring(
-                    Math.min(summaryStart, summaryEnd),
-                    Math.max(summaryStart, summaryEnd)
-                  ) || '（未选择内容）'}
-                </Text>
-                <Text style={styles.summaryCharCount}>
-                  已选择 {Math.abs(summaryEnd - summaryStart)} 字
-                </Text>
-              </View>
+              <Text style={styles.summaryCharCount}>
+                已选择 {Math.abs(selection.end - selection.start)} 字
+              </Text>
               
               {/* 快捷选择按钮 */}
               <View style={styles.quickSelectContainer}>
                 <TouchableOpacity
                   style={styles.quickSelectBtn}
-                  onPress={() => {
-                    setSummaryStart(0);
-                    setSummaryEnd(Math.min(50, entry.content.length));
-                  }}
+                  onPress={() => setSelection({ start: 0, end: Math.min(50, entry.content.length) })}
                 >
                   <Text style={styles.quickSelectText}>前50字</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.quickSelectBtn}
-                  onPress={() => {
-                    setSummaryStart(0);
-                    setSummaryEnd(Math.min(100, entry.content.length));
-                  }}
+                  onPress={() => setSelection({ start: 0, end: Math.min(100, entry.content.length) })}
                 >
                   <Text style={styles.quickSelectText}>前100字</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.quickSelectBtn}
-                  onPress={() => {
-                    setSummaryStart(0);
-                    setSummaryEnd(Math.min(200, entry.content.length));
-                  }}
+                  onPress={() => setSelection({ start: 0, end: Math.min(200, entry.content.length) })}
                 >
                   <Text style={styles.quickSelectText}>前200字</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.quickSelectBtn}
-                  onPress={() => {
-                    setSummaryStart(0);
-                    setSummaryEnd(entry.content.length);
-                  }}
+                  onPress={() => setSelection({ start: 0, end: entry.content.length })}
                 >
-                  <Text style={styles.quickSelectText}>全部</Text>
+                  <Text style={styles.quickSelectText}>全选</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -520,59 +556,23 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 12,
   },
-  rangeInputs: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  rangeInputWrapper: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  rangeInputLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 4,
-  },
-  rangeInput: {
-    width: 80,
-    height: 40,
-    backgroundColor: '#FFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5E5',
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '500',
+  selectableText: {
+    fontSize: 15,
+    lineHeight: 24,
     color: '#333',
-  },
-  rangeSeparator: {
-    fontSize: 20,
-    color: '#999',
-    marginHorizontal: 12,
-  },
-  summaryPreview: {
     backgroundColor: '#FFF',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 12,
-  },
-  summaryPreviewLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 8,
-  },
-  summaryPreviewText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#333',
+    minHeight: 120,
+    maxHeight: 200,
+    textAlignVertical: 'top',
   },
   summaryCharCount: {
     fontSize: 12,
     color: '#666',
     textAlign: 'right',
     marginTop: 8,
+    marginBottom: 12,
   },
   quickSelectContainer: {
     flexDirection: 'row',

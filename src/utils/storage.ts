@@ -198,6 +198,36 @@ export const diaryStorage = {
     storage.set(KEYS.DIARY_BOOKMARKS, value),
 };
 
+// 日记收藏存储
+export const diaryFavoriteStorage = {
+  get: (): Promise<string[]> => storage.get<string[]>('@mono:diary_favorites').then(v => v || []),
+  set: (value: string[]) => storage.set('@mono:diary_favorites', value),
+  add: async (entryId: string): Promise<void> => {
+    const favorites = await diaryFavoriteStorage.get();
+    if (!favorites.includes(entryId)) {
+      await diaryFavoriteStorage.set([...favorites, entryId]);
+    }
+  },
+  remove: async (entryId: string): Promise<void> => {
+    const favorites = await diaryFavoriteStorage.get();
+    await diaryFavoriteStorage.set(favorites.filter(id => id !== entryId));
+  },
+  toggle: async (entryId: string): Promise<boolean> => {
+    const favorites = await diaryFavoriteStorage.get();
+    const isFavorite = favorites.includes(entryId);
+    if (isFavorite) {
+      await diaryFavoriteStorage.set(favorites.filter(id => id !== entryId));
+    } else {
+      await diaryFavoriteStorage.set([...favorites, entryId]);
+    }
+    return !isFavorite;
+  },
+  isFavorite: async (entryId: string): Promise<boolean> => {
+    const favorites = await diaryFavoriteStorage.get();
+    return favorites.includes(entryId);
+  },
+};
+
 // 收纳存储
 export const inventoryStorage = {
   get: (): Promise<InventoryItem[] | null> => storage.get<InventoryItem[]>(KEYS.INVENTORY),
