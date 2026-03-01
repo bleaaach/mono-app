@@ -18,7 +18,6 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { captureRef } from 'react-native-view-shot';
-import { toPng } from 'html-to-image';
 import { DiaryEntry } from '../../types';
 import ShareCard, { ShareTemplate } from '../../components/diary/ShareCard';
 import { diaryStorage } from '../../utils/storage';
@@ -83,10 +82,27 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
     try {
       if (Platform.OS === 'web') {
         const element = shareCardRef.current as unknown as HTMLElement;
-        const dataUrl = await toPng(element, {
-          quality: 1,
-          pixelRatio: 2,
+        
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error('无法创建 Canvas 上下文');
+        }
+        
+        const rect = element.getBoundingClientRect();
+        const scale = 2;
+        canvas.width = rect.width * scale;
+        canvas.height = rect.height * scale;
+        ctx.scale(scale, scale);
+        
+        const html2canvas = (await import('html2canvas')).default;
+        const renderedCanvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#FFFFFF',
         });
+        
+        const dataUrl = renderedCanvas.toDataURL('image/png');
         
         const link = document.createElement('a');
         link.href = dataUrl;

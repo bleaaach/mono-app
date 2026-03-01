@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { DiaryEntry } from '../../types';
 import { diaryStorage, diaryFavoriteStorage } from '../../utils/storage';
-import { setPendingEditEntry } from '../../utils/events';
+import { setPendingEditEntry, setTargetTab } from '../../utils/events';
 import {
   SunnyMoodIcon,
   CloudyMoodIcon,
@@ -420,6 +420,7 @@ export default function RandomWalkScreen({ navigation }: { navigation: any }) {
           onPress={() => {
             if (currentEntry) {
               setPendingEditEntry(currentEntry.id);
+              setTargetTab('Diary');
               navigation.navigate('Main');
             }
           }}

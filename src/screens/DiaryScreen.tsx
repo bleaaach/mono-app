@@ -129,29 +129,33 @@ export default function DiaryScreen() {
   const allTags = [...DEFAULT_TAGS, ...customTags];
 
   // 加载数据
-  const loadEntries = async () => {
+  const loadEntries = async (): Promise<DiaryEntry[]> => {
     setIsLoading(true);
     try {
       const data = await diaryStorage.get();
       console.log('[Diary] Loaded entries:', data?.length || 0, data);
       if (data && Array.isArray(data)) {
-        setEntries(data.sort((a: DiaryEntry, b: DiaryEntry) => 
+        const sorted = data.sort((a: DiaryEntry, b: DiaryEntry) => 
           new Date(b.date).getTime() - new Date(a.date).getTime()
-        ));
+        );
+        setEntries(sorted);
         // 检查心情提醒
         checkMoodReminder(data);
         // 计算心情分析
         calculateMoodAnalysis(data);
+        return sorted;
       } else {
         console.log('[Diary] No data found or invalid data');
         setEntries([]);
+        return [];
       }
     } catch (error) {
       console.error('[Diary] Error loading entries:', error);
       setEntries([]);
+      return [];
+    } finally {
+      setTimeout(() => setIsLoading(false), 800);
     }
-    // 模拟加载延迟，展示骨架屏
-    setTimeout(() => setIsLoading(false), 800);
   };
   
   // 检查心情提醒（连续低落提醒）
@@ -263,23 +267,13 @@ export default function DiaryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadEntries().then(() => {
+      loadEntries().then((loadedEntries) => {
         const pendingId = getPendingEditEntry();
-        if (pendingId) {
-          setTimeout(() => {
-            const entry = entries.find(e => e.id === pendingId);
-            if (entry) {
-              openEditor(entry);
-            } else {
-              loadEntries().then(() => {
-                const entries2 = entries;
-                const entry2 = entries2.find(e => e.id === pendingId);
-                if (entry2) {
-                  openEditor(entry2);
-                }
-              });
-            }
-          }, 100);
+        if (pendingId && loadedEntries) {
+          const entry = loadedEntries.find((e: DiaryEntry) => e.id === pendingId);
+          if (entry) {
+            setTimeout(() => openEditor(entry), 100);
+          }
         }
       });
     }, [])
@@ -556,6 +550,15 @@ export default function DiaryScreen() {
       setNewTagInput('');
       setShowTagInput(false);
     }
+  };
+
+  const deleteTag = (tag: string) => {
+    if (DEFAULT_TAGS.includes(tag)) {
+      Alert.alert('提示', '默认标签不能删除');
+      return;
+    }
+    setCustomTags(prev => prev.filter(t => t !== tag));
+    setEditorTags(prev => prev.filter(t => t !== tag));
   };
 
   const saveDiary = () => {
@@ -1443,161 +1446,173 @@ export default function DiaryScreen() {
 
         {/* 年度报告 */}
         {yearlyReportData && (
-          <View style={styles.statsSection}>
-            <Text style={styles.statsSectionTitle}>{yearlyReportData.year}年度回顾</Text>
+          <View style={styles.yearlyReportSection}>
+            <View style={styles.yearlyHero}>
+              <Text style={styles.yearlyHeroYear}>{yearlyReportData.year}</Text>
+              <Text style={styles.yearlyHeroLabel}>年度回顾</Text>
+            </View>
             
-            <View style={styles.yearlyReportCard}>
-              <View style={styles.yearlyReportStats}>
-                <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.totalEntries}</Text>
-                  <Text style={styles.yearlyReportLabel}>篇日记</Text>
+            <View style={styles.yearlyStatsGrid}>
+              <View style={styles.yearlyStatCard}>
+                <Text style={styles.yearlyStatNumber}>{yearlyReportData.totalEntries}</Text>
+                <Text style={styles.yearlyStatLabel}>篇日记</Text>
+              </View>
+              <View style={styles.yearlyStatCard}>
+                <Text style={styles.yearlyStatNumber}>
+                  {yearlyReportData.totalWords > 1000 
+                    ? (yearlyReportData.totalWords / 1000).toFixed(1) + 'k' 
+                    : yearlyReportData.totalWords}
+                </Text>
+                <Text style={styles.yearlyStatLabel}>总字数</Text>
+              </View>
+              <View style={styles.yearlyStatCard}>
+                <Text style={styles.yearlyStatNumber}>{yearlyReportData.avgWordsPerEntry}</Text>
+                <Text style={styles.yearlyStatLabel}>字/篇</Text>
+              </View>
+              <View style={styles.yearlyStatCard}>
+                <Text style={styles.yearlyStatNumber}>{yearlyReportData.writingDaysRatio}%</Text>
+                <Text style={styles.yearlyStatLabel}>记录天数</Text>
+              </View>
+            </View>
+
+            <View style={styles.yearlyInsightCard}>
+              <Text style={styles.yearlyInsightCardTitle}>写作规律</Text>
+              <View style={styles.yearlyInsightGrid}>
+                <View style={styles.yearlyInsightItem}>
+                  <Ionicons name="time-outline" size={18} color="#666" />
+                  <Text style={styles.yearlyInsightText}>最爱在{yearlyReportData.writingPeriod}写作</Text>
                 </View>
-                <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>
-                    {yearlyReportData.totalWords > 1000 
-                      ? (yearlyReportData.totalWords / 1000).toFixed(1) + 'k' 
-                      : yearlyReportData.totalWords}
-                  </Text>
-                  <Text style={styles.yearlyReportLabel}>字数</Text>
+                <View style={styles.yearlyInsightItem}>
+                  <Ionicons name="trending-up-outline" size={18} color={yearlyReportData.writingTrend === '递增' ? '#34C759' : yearlyReportData.writingTrend === '递减' ? '#FF3B30' : '#666'} />
+                  <Text style={styles.yearlyInsightText}>写作频率{yearlyReportData.writingTrend}</Text>
                 </View>
-                <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.avgWordsPerEntry}</Text>
-                  <Text style={styles.yearlyReportLabel}>字/篇</Text>
+                <View style={styles.yearlyInsightItem}>
+                  <Ionicons name="calendar-outline" size={18} color="#666" />
+                  <Text style={styles.yearlyInsightText}>{yearlyReportData.weekdayVsWeekend.preference}更爱记录</Text>
                 </View>
-                <View style={styles.yearlyReportStat}>
-                  <Text style={styles.yearlyReportNumber}>{yearlyReportData.writingDaysRatio}%</Text>
-                  <Text style={styles.yearlyReportLabel}>天数占比</Text>
+                <View style={styles.yearlyInsightItem}>
+                  <Ionicons name="flame-outline" size={18} color="#FF9500" />
+                  <Text style={styles.yearlyInsightText}>最长连续{yearlyReportData.maxStreak}天</Text>
                 </View>
               </View>
+            </View>
 
-              <View style={styles.yearlyInsightSection}>
-                <Text style={styles.yearlyInsightTitle}>写作规律</Text>
-                <View style={styles.yearlyInsightGrid}>
-                  <View style={styles.yearlyInsightItem}>
-                    <Ionicons name="time-outline" size={18} color="#666" />
-                    <Text style={styles.yearlyInsightText}>最爱在{yearlyReportData.writingPeriod}写作</Text>
-                  </View>
-                  <View style={styles.yearlyInsightItem}>
-                    <Ionicons name="trending-up-outline" size={18} color={yearlyReportData.writingTrend === '递增' ? '#34C759' : yearlyReportData.writingTrend === '递减' ? '#FF3B30' : '#666'} />
-                    <Text style={styles.yearlyInsightText}>写作频率{yearlyReportData.writingTrend}</Text>
-                  </View>
-                  <View style={styles.yearlyInsightItem}>
-                    <Ionicons name="calendar-outline" size={18} color="#666" />
-                    <Text style={styles.yearlyInsightText}>{yearlyReportData.weekdayVsWeekend.preference}更爱记录</Text>
-                  </View>
-                  <View style={styles.yearlyInsightItem}>
-                    <Ionicons name="flame-outline" size={18} color="#FF9500" />
-                    <Text style={styles.yearlyInsightText}>最长连续{yearlyReportData.maxStreak}天</Text>
-                  </View>
-                </View>
-              </View>
-
-              {Object.keys(yearlyReportData.moodDist).length > 0 && (
-                <View style={styles.yearlyReportMoods}>
-                  <Text style={styles.yearlyReportMoodTitle}>年度心情 TOP3</Text>
-                  <View style={styles.yearlyReportMoodList}>
-                    {Object.entries(yearlyReportData.moodDist)
-                      .sort((a, b) => b[1] - a[1])
-                      .slice(0, 3)
-                      .map(([mood, count]) => {
-                        const moodInfo = getMoodDisplay(mood);
-                        const percentage = Math.round((count / yearlyReportData.totalEntries) * 100);
-                        return (
-                          <View key={mood} style={styles.yearlyReportMoodItem}>
-                            {React.createElement(moodInfo.iconComponent, { size: 20, color: '#000000' })}
-                            <Text style={styles.yearlyReportMoodLabel}>{moodInfo.label}</Text>
-                            <Text style={styles.yearlyReportMoodPercent}>{percentage}%</Text>
+            {Object.keys(yearlyReportData.moodDist).length > 0 && (
+              <View style={styles.yearlyInsightCard}>
+                <Text style={styles.yearlyInsightCardTitle}>年度心情</Text>
+                <View style={styles.yearlyMoodList}>
+                  {Object.entries(yearlyReportData.moodDist)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([mood, count], index) => {
+                      const moodInfo = getMoodDisplay(mood);
+                      const percentage = Math.round((count / yearlyReportData.totalEntries) * 100);
+                      return (
+                        <View key={mood} style={styles.yearlyMoodItem}>
+                          <View style={styles.yearlyMoodRank}>
+                            <Text style={styles.yearlyMoodRankText}>{index + 1}</Text>
                           </View>
-                        );
-                      })}
-                  </View>
+                          {React.createElement(moodInfo.iconComponent, { size: 24, color: '#000000' })}
+                          <View style={styles.yearlyMoodInfo}>
+                            <Text style={styles.yearlyMoodLabel}>{moodInfo.label}</Text>
+                            <View style={styles.yearlyMoodBar}>
+                              <View style={[styles.yearlyMoodBarFill, { width: `${percentage}%` }]} />
+                            </View>
+                          </View>
+                          <Text style={styles.yearlyMoodPercent}>{percentage}%</Text>
+                        </View>
+                      );
+                    })}
                 </View>
-              )}
+              </View>
+            )}
 
-              {yearlyReportData.moodTrend && yearlyReportData.moodTrend.bestMonth !== null && (
-                <View style={styles.yearlyInsightSection}>
-                  <Text style={styles.yearlyInsightTitle}>情绪趋势</Text>
-                  <View style={styles.yearlyInsightGrid}>
-                    {yearlyReportData.moodTrend.bestMonth !== null && (
-                      <View style={styles.yearlyInsightItem}>
-                        <Ionicons name="happy-outline" size={18} color="#34C759" />
-                        <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.bestMonth + 1}月心情最佳</Text>
-                      </View>
-                    )}
-                    {yearlyReportData.moodTrend.worstMonth !== null && (
-                      <View style={styles.yearlyInsightItem}>
-                        <Ionicons name="sad-outline" size={18} color="#FF3B30" />
-                        <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.worstMonth + 1}月情绪低谷</Text>
-                      </View>
-                    )}
+            {yearlyReportData.moodTrend && yearlyReportData.moodTrend.bestMonth !== null && (
+              <View style={styles.yearlyInsightCard}>
+                <Text style={styles.yearlyInsightCardTitle}>情绪趋势</Text>
+                <View style={styles.yearlyInsightGrid}>
+                  {yearlyReportData.moodTrend.bestMonth !== null && (
                     <View style={styles.yearlyInsightItem}>
-                      <Ionicons name="analytics-outline" size={18} color="#666" />
-                      <Text style={styles.yearlyInsightText}>情绪波动指数 {yearlyReportData.moodTrend.volatility}</Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {(yearlyReportData.longestEntry || yearlyReportData.bestMoodEntry) && (
-                <View style={styles.yearlyInsightSection}>
-                  <Text style={styles.yearlyInsightTitle}>年度亮点</Text>
-                  {yearlyReportData.longestEntry && (
-                    <View style={styles.yearlyHighlightCard}>
-                      <View style={styles.yearlyHighlightHeader}>
-                        <Ionicons name="document-text-outline" size={16} color="#000" />
-                        <Text style={styles.yearlyHighlightLabel}>最长日记</Text>
-                      </View>
-                      <Text style={styles.yearlyHighlightDate}>{yearlyReportData.longestEntry.date}</Text>
-                      <Text style={styles.yearlyHighlightContent} numberOfLines={2}>
-                        {yearlyReportData.longestEntry.preview}...
-                      </Text>
-                      <Text style={styles.yearlyHighlightMeta}>{yearlyReportData.longestEntry.wordCount} 字</Text>
+                      <Ionicons name="happy-outline" size={18} color="#34C759" />
+                      <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.bestMonth + 1}月心情最佳</Text>
                     </View>
                   )}
-                  {yearlyReportData.bestMoodEntry && (
-                    <View style={styles.yearlyHighlightCard}>
-                      <View style={styles.yearlyHighlightHeader}>
-                        {React.createElement(getMoodDisplay(yearlyReportData.bestMoodEntry.mood).iconComponent, { size: 16, color: '#000' })}
-                        <Text style={styles.yearlyHighlightLabel}>心情最好的一天</Text>
-                      </View>
-                      <Text style={styles.yearlyHighlightDate}>{yearlyReportData.bestMoodEntry.date}</Text>
-                      <Text style={styles.yearlyHighlightMeta}>
-                        {getMoodDisplay(yearlyReportData.bestMoodEntry.mood).label} · 强度 {yearlyReportData.bestMoodEntry.moodIntensity}/5
-                      </Text>
+                  {yearlyReportData.moodTrend.worstMonth !== null && (
+                    <View style={styles.yearlyInsightItem}>
+                      <Ionicons name="sad-outline" size={18} color="#FF3B30" />
+                      <Text style={styles.yearlyInsightText}>{yearlyReportData.moodTrend.worstMonth + 1}月情绪低谷</Text>
                     </View>
                   )}
-                </View>
-              )}
-
-              {yearlyReportData.topTags && yearlyReportData.topTags.length > 0 && (
-                <View style={styles.yearlyInsightSection}>
-                  <Text style={styles.yearlyInsightTitle}>年度标签</Text>
-                  <View style={styles.yearlyTagsContainer}>
-                    {yearlyReportData.topTags.map(([tag, count]) => (
-                      <View key={tag} style={styles.yearlyTagItem}>
-                        <Text style={styles.yearlyTagName}>#{tag}</Text>
-                        <Text style={styles.yearlyTagCount}>{count}</Text>
-                      </View>
-                    ))}
+                  <View style={styles.yearlyInsightItem}>
+                    <Ionicons name="analytics-outline" size={18} color="#666" />
+                    <Text style={styles.yearlyInsightText}>情绪波动指数 {yearlyReportData.moodTrend.volatility}</Text>
                   </View>
                 </View>
-              )}
+              </View>
+            )}
 
+            {(yearlyReportData.longestEntry || yearlyReportData.bestMoodEntry) && (
+              <View style={styles.yearlyInsightCard}>
+                <Text style={styles.yearlyInsightCardTitle}>年度亮点</Text>
+                {yearlyReportData.longestEntry && (
+                  <View style={styles.yearlyHighlightCard}>
+                    <View style={styles.yearlyHighlightHeader}>
+                      <Ionicons name="document-text-outline" size={16} color="#000" />
+                      <Text style={styles.yearlyHighlightLabel}>最长日记</Text>
+                    </View>
+                    <Text style={styles.yearlyHighlightDate}>{yearlyReportData.longestEntry.date}</Text>
+                    <Text style={styles.yearlyHighlightContent} numberOfLines={2}>
+                      {yearlyReportData.longestEntry.preview}...
+                    </Text>
+                    <Text style={styles.yearlyHighlightMeta}>{yearlyReportData.longestEntry.wordCount} 字</Text>
+                  </View>
+                )}
+                {yearlyReportData.bestMoodEntry && (
+                  <View style={styles.yearlyHighlightCard}>
+                    <View style={styles.yearlyHighlightHeader}>
+                      {React.createElement(getMoodDisplay(yearlyReportData.bestMoodEntry.mood).iconComponent, { size: 16, color: '#000' })}
+                      <Text style={styles.yearlyHighlightLabel}>心情最好的一天</Text>
+                    </View>
+                    <Text style={styles.yearlyHighlightDate}>{yearlyReportData.bestMoodEntry.date}</Text>
+                    <Text style={styles.yearlyHighlightMeta}>
+                      {getMoodDisplay(yearlyReportData.bestMoodEntry.mood).label} · 强度 {yearlyReportData.bestMoodEntry.moodIntensity}/5
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {yearlyReportData.topTags && yearlyReportData.topTags.length > 0 && (
+              <View style={styles.yearlyInsightCard}>
+                <Text style={styles.yearlyInsightCardTitle}>年度标签</Text>
+                <View style={styles.yearlyTagsContainer}>
+                  {yearlyReportData.topTags.map(([tag, count]) => (
+                    <View key={tag} style={styles.yearlyTagItem}>
+                      <Text style={styles.yearlyTagName}>#{tag}</Text>
+                      <Text style={styles.yearlyTagCount}>{count}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            <View style={styles.yearlyInsightCard}>
+              <Text style={styles.yearlyInsightCardTitle}>月度写作分布</Text>
               <View style={styles.yearlyMonthChart}>
-                <Text style={styles.yearlyInsightTitle}>月度写作分布</Text>
-                <View style={styles.yearlyMonthBars}>
-                  {yearlyReportData.monthlyCount.map((count, index) => {
-                    const maxCount = Math.max(...yearlyReportData.monthlyCount, 1);
-                    const height = Math.max(4, (count / maxCount) * 60);
-                    return (
-                      <View key={index} style={styles.yearlyMonthBarWrapper}>
-                        <Text style={styles.yearlyMonthBarCount}>{count || ''}</Text>
-                        <View style={[styles.yearlyMonthBar, { height }]} />
-                        <Text style={styles.yearlyMonthBarLabel}>{index + 1}</Text>
+                {yearlyReportData.monthlyCount.map((count, index) => {
+                  const maxCount = Math.max(...yearlyReportData.monthlyCount, 1);
+                  const heightPercent = (count / maxCount) * 100;
+                  const isActive = count > 0;
+                  return (
+                    <View key={index} style={styles.yearlyMonthColumn}>
+                      <Text style={styles.yearlyMonthCount}>{count || ''}</Text>
+                      <View style={styles.yearlyMonthBarBg}>
+                        <View style={[styles.yearlyMonthBarFill2, { height: `${heightPercent}%` }]} />
                       </View>
-                    );
-                  })}
-                </View>
+                      <Text style={[styles.yearlyMonthLabel, isActive && styles.yearlyMonthLabelActive]}>{index + 1}</Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
           </View>
@@ -1904,15 +1919,24 @@ export default function DiaryScreen() {
                   <Text style={styles.selectorLabel}>标签</Text>
                   <View style={styles.tagOptions}>
                     {allTags.map(tag => (
-                      <TouchableOpacity
-                        key={tag}
-                        style={[styles.tagBtn, editorTags.includes(tag) && styles.tagBtnActive]}
-                        onPress={() => toggleTag(tag)}
-                      >
-                        <Text style={[styles.tagBtnText, editorTags.includes(tag) && styles.tagBtnTextActive]}>
-                          {tag}
-                        </Text>
-                      </TouchableOpacity>
+                      <View key={tag} style={styles.tagBtnWrapper}>
+                        <TouchableOpacity
+                          style={[styles.tagBtn, editorTags.includes(tag) && styles.tagBtnActive]}
+                          onPress={() => toggleTag(tag)}
+                        >
+                          <Text style={[styles.tagBtnText, editorTags.includes(tag) && styles.tagBtnTextActive]}>
+                            {tag}
+                          </Text>
+                        </TouchableOpacity>
+                        {!DEFAULT_TAGS.includes(tag) && (
+                          <TouchableOpacity 
+                            style={styles.tagDeleteBtn}
+                            onPress={() => deleteTag(tag)}
+                          >
+                            <Ionicons name="remove-circle" size={16} color="#FF3B30" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     ))}
                     <TouchableOpacity 
                       style={styles.addTagBtn}
@@ -2738,96 +2762,68 @@ const styles = StyleSheet.create({
     color: '#999999',
     marginTop: 2,
   },
-  yearlyReportCard: {
+  yearlyReportSection: {
+    marginHorizontal: 20,
+    marginBottom: 32,
+  },
+  yearlyHero: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    backgroundColor: '#000000',
+    borderRadius: 20,
+    marginBottom: 16,
+  },
+  yearlyHeroYear: {
+    fontSize: 56,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -2,
+  },
+  yearlyHeroLabel: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 4,
+    letterSpacing: 4,
+  },
+  yearlyStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  yearlyStatCard: {
+    width: '48%',
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 20,
-  },
-  yearlyReportHeader: {
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  yearlyReportYear: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  yearlyReportSubtitle: {
-    fontSize: 14,
-    color: '#999999',
-    marginTop: 4,
-  },
-  yearlyReportStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 24,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    borderWidth: 1,
     borderColor: '#F0F0F0',
   },
-  yearlyReportStat: {
-    alignItems: 'center',
-  },
-  yearlyReportNumber: {
-    fontSize: 28,
+  yearlyStatNumber: {
+    fontSize: 32,
     fontWeight: '700',
     color: '#000000',
   },
-  yearlyReportLabel: {
+  yearlyStatLabel: {
     fontSize: 12,
     color: '#999999',
     marginTop: 4,
   },
-  yearlyReportMoods: {
+  yearlyInsightCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  yearlyInsightCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
     marginBottom: 16,
-  },
-  yearlyReportMoodTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  yearlyReportMoodList: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-  },
-  yearlyReportMoodItem: {
-    alignItems: 'center',
-  },
-  yearlyReportMoodEmoji: {
-    fontSize: 32,
-  },
-  yearlyReportMoodLabel: {
-    fontSize: 12,
-    color: '#666666',
-    marginTop: 4,
-  },
-  yearlyReportMoodPercent: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginTop: 2,
-  },
-  yearlyReportFirst: {
-    fontSize: 12,
-    color: '#999999',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  yearlyInsightSection: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  yearlyInsightTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 12,
   },
   yearlyInsightGrid: {
     flexDirection: 'row',
@@ -2847,11 +2843,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#333333',
   },
+  yearlyMoodList: {
+    gap: 12,
+  },
+  yearlyMoodItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  yearlyMoodRank: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  yearlyMoodRankText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  yearlyMoodInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  yearlyMoodLabel: {
+    fontSize: 14,
+    color: '#333333',
+  },
+  yearlyMoodBar: {
+    height: 4,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  yearlyMoodBarFill: {
+    height: '100%',
+    backgroundColor: '#000000',
+    borderRadius: 2,
+  },
+  yearlyMoodPercent: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+    minWidth: 48,
+    textAlign: 'right',
+  },
   yearlyHighlightCard: {
     backgroundColor: '#FAFAFA',
     borderRadius: 12,
-    padding: 14,
-    marginTop: 10,
+    padding: 16,
+    marginTop: 12,
   },
   yearlyHighlightHeader: {
     flexDirection: 'row',
@@ -2860,7 +2903,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   yearlyHighlightLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#000000',
   },
@@ -2889,51 +2932,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     backgroundColor: '#F0F0F0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
   },
   yearlyTagName: {
-    fontSize: 13,
-    color: '#333333',
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '500',
   },
   yearlyTagCount: {
     fontSize: 12,
     color: '#999999',
   },
   yearlyMonthChart: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  yearlyMonthBars: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 90,
-    paddingHorizontal: 4,
+    height: 120,
+    paddingTop: 20,
   },
-  yearlyMonthBarWrapper: {
+  yearlyMonthColumn: {
     flex: 1,
     alignItems: 'center',
     height: '100%',
+    justifyContent: 'flex-end',
   },
-  yearlyMonthBarCount: {
-    fontSize: 10,
+  yearlyMonthCount: {
+    fontSize: 11,
     color: '#999999',
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  yearlyMonthBar: {
-    width: 16,
+  yearlyMonthBarBg: {
+    width: 20,
+    height: 60,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 4,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  yearlyMonthBarFill2: {
+    width: '100%',
     backgroundColor: '#000000',
     borderRadius: 4,
-    minHeight: 4,
   },
-  yearlyMonthBarLabel: {
-    fontSize: 10,
-    color: '#999999',
-    marginTop: 4,
+  yearlyMonthLabel: {
+    fontSize: 11,
+    color: '#CCCCCC',
+    marginTop: 6,
+  },
+  yearlyMonthLabelActive: {
+    color: '#000000',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,
@@ -3011,12 +3061,24 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  tagBtnWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
   tagBtn: {
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E5E5E5',
+  },
+  tagDeleteBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
   },
   tagBtnActive: {
     backgroundColor: '#000000',

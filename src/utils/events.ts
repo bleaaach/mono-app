@@ -46,3 +46,16 @@ export const getPendingEditEntry = () => {
   pendingEditEntryId = null;
   return id;
 };
+
+// 全局状态：目标 Tab 名称
+let targetTabName: string | null = null;
+
+export const setTargetTab = (tabName: string | null) => {
+  targetTabName = tabName;
+};
+
+export const getTargetTab = () => {
+  const name = targetTabName;
+  targetTabName = null;
+  return name;
+};
