@@ -145,6 +145,56 @@ const getIconSymbol = (icon: string): string => {
   return '';
 };
 
+// 打卡历史记录项组件
+interface CheckinHistoryItemProps {
+  log: HabitLog;
+  habitLogs: HabitLog[];
+  onDelete: (logs: HabitLog[]) => Promise<void>;
+}
+
+const CheckinHistoryItem: React.FC<CheckinHistoryItemProps> = ({ log, habitLogs, onDelete }) => {
+  const handleDelete = () => {
+    Alert.alert(
+      '删除打卡记录',
+      `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '删除',
+          style: 'destructive',
+          onPress: () => {
+            const newLogs = habitLogs.filter(l => l.id !== log.id);
+            onDelete(newLogs);
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <View style={styles.checkinHistoryItem}>
+      <View style={styles.checkinHistoryItemLeft}>
+        <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
+        {log.note && (
+          <Text style={styles.checkinHistoryNote} numberOfLines={1}>
+            {log.note}
+          </Text>
+        )}
+      </View>
+      <View style={styles.checkinHistoryItemRight}>
+        <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
+        <TouchableOpacity
+          style={styles.checkinHistoryDelete}
+          onPress={handleDelete}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.checkinHistoryDeleteText}>删除</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 // 热力图颜色
 const HEATMAP_COLORS = {
   0: '#F3F4F6',
@@ -2733,50 +2783,14 @@ export default function HabitScreen() {
                     
                     return (
                       <View style={styles.checkinHistoryList}>
-                        {logs.map(log => {
-                          const handleDeleteLog = () => {
-                            const logId = log.id;
-                            const logDate = log.date;
-                            Alert.alert(
-                              '删除打卡记录',
-                              `确定要删除 ${formatDate(logDate)} 的打卡记录吗？`,
-                              [
-                                { text: '取消', style: 'cancel' },
-                                {
-                                  text: '删除',
-                                  style: 'destructive',
-                                  onPress: async () => {
-                                    const newLogs = habitLogs.filter(l => l.id !== logId);
-                                    await saveHabitLogs(newLogs);
-                                  },
-                                },
-                              ]
-                            );
-                          };
-                          
-                          return (
-                            <View key={log.id} style={styles.checkinHistoryItem}>
-                              <View style={styles.checkinHistoryItemLeft}>
-                                <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
-                                {log.note && (
-                                  <Text style={styles.checkinHistoryNote} numberOfLines={1}>
-                                    {log.note}
-                                  </Text>
-                                )}
-                              </View>
-                              <View style={styles.checkinHistoryItemRight}>
-                                <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
-                                <TouchableOpacity
-                                  style={styles.checkinHistoryDelete}
-                                  onPress={handleDeleteLog}
-                                  activeOpacity={0.6}
-                                >
-                                  <Text style={styles.checkinHistoryDeleteText}>删除</Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          );
-                        })}
+                        {logs.map((log, index) => (
+                          <CheckinHistoryItem
+                            key={log.id}
+                            log={log}
+                            habitLogs={habitLogs}
+                            onDelete={saveHabitLogs}
+                          />
+                        ))}
                       </View>
                     );
                   })()}
