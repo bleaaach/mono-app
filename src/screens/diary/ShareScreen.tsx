@@ -37,6 +37,8 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<ShareTemplate>('minimal');
   const [caption, setCaption] = useState('');
   const [contentRange, setContentRange] = useState<'full' | 'summary'>('full');
+  const [summaryStart, setSummaryStart] = useState(0);
+  const [summaryEnd, setSummaryEnd] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -58,11 +60,12 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
   const getDisplayEntry = (): DiaryEntry | null => {
     if (!entry) return null;
     if (contentRange === 'full') return entry;
+    const start = Math.min(summaryStart, summaryEnd);
+    const end = Math.max(summaryStart, summaryEnd);
+    const selectedContent = entry.content.substring(start, end);
     return {
       ...entry,
-      content: entry.content.length > 100 
-        ? entry.content.substring(0, 100) + '...' 
-        : entry.content,
+      content: selectedContent + (end < entry.content.length ? '...' : ''),
     };
   };
 
@@ -207,6 +210,98 @@ export default function ShareScreen({ route, navigation }: ShareScreenProps) {
               </Text>
             </TouchableOpacity>
           </View>
+          
+          {/* 摘要选择区域 */}
+          {contentRange === 'summary' && entry && (
+            <View style={styles.summarySelector}>
+              <Text style={styles.summaryHint}>
+                选择要分享的内容范围（共 {entry.content.length} 字）
+              </Text>
+              
+              {/* 范围选择器 */}
+              <View style={styles.rangeInputs}>
+                <View style={styles.rangeInputWrapper}>
+                  <Text style={styles.rangeInputLabel}>起始</Text>
+                  <TextInput
+                    style={styles.rangeInput}
+                    value={String(summaryStart)}
+                    onChangeText={(text) => {
+                      const num = parseInt(text) || 0;
+                      setSummaryStart(Math.max(0, Math.min(num, entry.content.length)));
+                    }}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <Text style={styles.rangeSeparator}>-</Text>
+                <View style={styles.rangeInputWrapper}>
+                  <Text style={styles.rangeInputLabel}>结束</Text>
+                  <TextInput
+                    style={styles.rangeInput}
+                    value={String(summaryEnd)}
+                    onChangeText={(text) => {
+                      const num = parseInt(text) || 0;
+                      setSummaryEnd(Math.max(0, Math.min(num, entry.content.length)));
+                    }}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              
+              {/* 预览选中的内容 */}
+              <View style={styles.summaryPreview}>
+                <Text style={styles.summaryPreviewLabel}>选中内容预览：</Text>
+                <Text style={styles.summaryPreviewText} numberOfLines={5}>
+                  {entry.content.substring(
+                    Math.min(summaryStart, summaryEnd),
+                    Math.max(summaryStart, summaryEnd)
+                  ) || '（未选择内容）'}
+                </Text>
+                <Text style={styles.summaryCharCount}>
+                  已选择 {Math.abs(summaryEnd - summaryStart)} 字
+                </Text>
+              </View>
+              
+              {/* 快捷选择按钮 */}
+              <View style={styles.quickSelectContainer}>
+                <TouchableOpacity
+                  style={styles.quickSelectBtn}
+                  onPress={() => {
+                    setSummaryStart(0);
+                    setSummaryEnd(Math.min(50, entry.content.length));
+                  }}
+                >
+                  <Text style={styles.quickSelectText}>前50字</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickSelectBtn}
+                  onPress={() => {
+                    setSummaryStart(0);
+                    setSummaryEnd(Math.min(100, entry.content.length));
+                  }}
+                >
+                  <Text style={styles.quickSelectText}>前100字</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickSelectBtn}
+                  onPress={() => {
+                    setSummaryStart(0);
+                    setSummaryEnd(Math.min(200, entry.content.length));
+                  }}
+                >
+                  <Text style={styles.quickSelectText}>前200字</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.quickSelectBtn}
+                  onPress={() => {
+                    setSummaryStart(0);
+                    setSummaryEnd(entry.content.length);
+                  }}
+                >
+                  <Text style={styles.quickSelectText}>全部</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         {/* 配文 */}
@@ -412,5 +507,88 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFF',
     fontWeight: '600',
+  },
+  // 摘要选择器样式
+  summarySelector: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+  },
+  summaryHint: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 12,
+  },
+  rangeInputs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  rangeInputWrapper: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  rangeInputLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 4,
+  },
+  rangeInput: {
+    width: 80,
+    height: 40,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  rangeSeparator: {
+    fontSize: 20,
+    color: '#999',
+    marginHorizontal: 12,
+  },
+  summaryPreview: {
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  summaryPreviewLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 8,
+  },
+  summaryPreviewText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#333',
+  },
+  summaryCharCount: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'right',
+    marginTop: 8,
+  },
+  quickSelectContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickSelectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5E5',
+  },
+  quickSelectText: {
+    fontSize: 13,
+    color: '#666',
   },
 });

@@ -308,21 +308,52 @@ export default function DiaryScreen() {
   const fetchWeather = async () => {
     setIsFetchingWeather(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('提示', '需要位置权限才能获取天气');
-        setIsFetchingWeather(false);
-        return;
-      }
+      let latitude: number;
+      let longitude: number;
 
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
+      if (Platform.OS === 'web') {
+        if (!navigator.geolocation) {
+          Alert.alert('提示', '浏览器不支持地理位置功能');
+          setIsFetchingWeather(false);
+          return;
+        }
+        
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60000,
+          });
+        });
+        
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+      } else {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('提示', '需要位置权限才能获取天气');
+          setIsFetchingWeather(false);
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({});
+        latitude = location.coords.latitude;
+        longitude = location.coords.longitude;
+      }
       
-      // 使用免费的 Open-Meteo API 获取天气
       const response = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`
       );
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      
+      if (!data.current) {
+        throw new Error('Invalid weather data');
+      }
       
       const weatherCode = data.current.weather_code;
       const weatherInfo = getWeatherInfo(weatherCode);
@@ -337,7 +368,8 @@ export default function DiaryScreen() {
       });
     } catch (error) {
       console.error('获取天气失败:', error);
-      Alert.alert('提示', '获取天气失败，请稍后重试');
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      Alert.alert('提示', `获取天气失败: ${errorMessage}`);
     }
     setIsFetchingWeather(false);
   };
