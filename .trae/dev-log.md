@@ -79,6 +79,14 @@
   - 修改文件:
     - HabitScreen.tsx - 优化按钮样式和间距
 
+- [x] 打卡备注功能
+  - 关联 PRD: prd.md #习惯追踪
+  - 类型检查: ✅ 通过
+  - 审查结果: ✅ 通过
+  - 说明: 第一次打卡时弹出备注输入框，支持添加备注（可选），最多200字
+  - 修改文件:
+    - HabitScreen.tsx - 添加打卡备注弹窗、状态管理和保存逻辑
+
 ### 待处理 ⏳
 
 - 数据统计页面优化 (PRD: HABIT_PRD.md #Stats)
@@ -86,7 +94,6 @@
 - 动画效果完善 (PRD: HABIT_PRD.md #UI优化)
 - 日记无限滚动加载 (PRD: DIARY_PRD.md #Timeline)
 - 日记软删除功能 (PRD: DIARY_PRD.md #Delete)
-- 习惯打卡日志功能 (PRD: prd.md #习惯追踪)
 
 ### 今日总结
 

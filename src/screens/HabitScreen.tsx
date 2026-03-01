@@ -267,6 +267,12 @@ export default function HabitScreen() {
   const [makeupDate, setMakeupDate] = useState<string>('');
   const [makeupNote, setMakeupNote] = useState<string>('');
 
+  // 打卡备注弹窗状态
+  const [showCheckinNoteModal, setShowCheckinNoteModal] = useState(false);
+  const [checkinNoteHabit, setCheckinNoteHabit] = useState<Habit | null>(null);
+  const [checkinNoteText, setCheckinNoteText] = useState('');
+  const [checkinNoteDate, setCheckinNoteDate] = useState<string>('');
+
   // 自定义分类
   const [customCategories, setCustomCategories] = useState<CustomCategory[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -695,7 +701,6 @@ export default function HabitScreen() {
     ]).start();
 
     const today = getTodayString();
-    const targetValue = habit.target?.value || 1;
     const existingLog = habitLogs.find(l => l.habitId === habit.id && l.date === today);
 
     if (existingLog) {
@@ -707,17 +712,32 @@ export default function HabitScreen() {
       );
       await saveHabitLogs(newLogs);
     } else {
-      const newLog: HabitLog = {
-        id: generateId(),
-        habitId: habit.id,
-        date: today,
-        completed: true,
-        count: 1,
-        isMakeup: false,
-        createdAt: new Date().toISOString(),
-      };
-      await saveHabitLogs([...habitLogs, newLog]);
+      // 第一次打卡，弹出备注输入
+      setCheckinNoteHabit(habit);
+      setCheckinNoteDate(today);
+      setCheckinNoteText('');
+      setShowCheckinNoteModal(true);
     }
+  };
+
+  // 保存带备注的打卡记录
+  const saveCheckinWithNote = async () => {
+    if (!checkinNoteHabit) return;
+
+    const newLog: HabitLog = {
+      id: generateId(),
+      habitId: checkinNoteHabit.id,
+      date: checkinNoteDate,
+      completed: true,
+      count: 1,
+      note: checkinNoteText.trim() || undefined,
+      isMakeup: false,
+      createdAt: new Date().toISOString(),
+    };
+    await saveHabitLogs([...habitLogs, newLog]);
+    setShowCheckinNoteModal(false);
+    setCheckinNoteHabit(null);
+    setCheckinNoteText('');
   };
 
   // 长按菜单
@@ -2467,6 +2487,59 @@ export default function HabitScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveMakeup}>
                 <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 打卡备注弹窗 */}
+      <Modal
+        visible={showCheckinNoteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCheckinNoteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.checkinNoteModalContent}>
+            <View style={styles.checkinNoteHeader}>
+              <Text style={styles.modalTitle}>打卡备注</Text>
+              <TouchableOpacity onPress={() => setShowCheckinNoteModal(false)}>
+                <CloseIcon size={24} color={Colors.gray[500]} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.checkinNoteSubtitle}>
+              为「{checkinNoteHabit?.name}」添加备注（可选）
+            </Text>
+            
+            <TextInput
+              style={styles.checkinNoteInput}
+              placeholder="例如：今天感觉不错，完成了5公里跑步..."
+              value={checkinNoteText}
+              onChangeText={setCheckinNoteText}
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+            />
+            <Text style={styles.checkinNoteHint}>{checkinNoteText.length}/200</Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => {
+                  // 跳过备注直接打卡
+                  saveCheckinWithNote();
+                }}
+              >
+                <Text style={styles.modalButtonCancelText}>跳过</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButtonConfirm, !checkinNoteText.trim() && styles.modalButtonDisabled]} 
+                onPress={saveCheckinWithNote}
+                disabled={!checkinNoteText.trim()}
+              >
+                <Text style={styles.modalButtonConfirmText}>保存备注</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -4679,6 +4752,43 @@ const styles = StyleSheet.create({
   noteInput: {
     height: 80,
     textAlignVertical: 'top',
+  },
+  // 打卡备注弹窗
+  checkinNoteModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 20,
+    maxWidth: 400,
+    width: '90%',
+  },
+  checkinNoteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  checkinNoteSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  checkinNoteInput: {
+    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    color: '#000000',
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  checkinNoteHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'right',
+    marginTop: 8,
+    marginBottom: 16,
   },
   // 每周完成对比图表
   weeklyComparisonChart: {
