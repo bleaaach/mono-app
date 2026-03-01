@@ -2712,6 +2712,69 @@ export default function HabitScreen() {
                   </View>
                 )}
 
+                {/* 打卡历史记录 */}
+                <View style={styles.checkinHistorySection}>
+                  <View style={styles.checkinHistoryHeader}>
+                    <Text style={styles.checkinHistoryTitle}>打卡记录</Text>
+                    <Text style={styles.checkinHistoryCount}>
+                      {habitLogs.filter(l => l.habitId === selectedHabit.id && l.completed).length} 次
+                    </Text>
+                  </View>
+                  
+                  {(() => {
+                    const logs = habitLogs
+                      .filter(l => l.habitId === selectedHabit.id && l.completed)
+                      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                      .slice(0, 20); // 最近20条
+                    
+                    if (logs.length === 0) {
+                      return <Text style={styles.checkinHistoryEmpty}>暂无打卡记录</Text>;
+                    }
+                    
+                    return (
+                      <View style={styles.checkinHistoryList}>
+                        {logs.map(log => (
+                          <View key={log.id} style={styles.checkinHistoryItem}>
+                            <View style={styles.checkinHistoryItemLeft}>
+                              <Text style={styles.checkinHistoryDate}>{formatDate(log.date)}</Text>
+                              {log.note && (
+                                <Text style={styles.checkinHistoryNote} numberOfLines={1}>
+                                  {log.note}
+                                </Text>
+                              )}
+                            </View>
+                            <View style={styles.checkinHistoryItemRight}>
+                              <Text style={styles.checkinHistoryCount}>×{log.count}</Text>
+                              <TouchableOpacity
+                                style={styles.checkinHistoryDelete}
+                                onPress={() => {
+                                  Alert.alert(
+                                    '删除打卡记录',
+                                    `确定要删除 ${formatDate(log.date)} 的打卡记录吗？`,
+                                    [
+                                      { text: '取消', style: 'cancel' },
+                                      {
+                                        text: '删除',
+                                        style: 'destructive',
+                                        onPress: async () => {
+                                          const newLogs = habitLogs.filter(l => l.id !== log.id);
+                                          await saveHabitLogs(newLogs);
+                                        },
+                                      },
+                                    ]
+                                  );
+                                }}
+                              >
+                                <Text style={styles.checkinHistoryDeleteText}>删除</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
+                </View>
+
                 {/* 操作按钮 */}
                 <View style={styles.detailActions}>
                   <TouchableOpacity
@@ -4584,6 +4647,76 @@ const styles = StyleSheet.create({
   detailActionButtonTextDanger: {
     color: '#DC2626',
     fontWeight: '600',
+  },
+  // 打卡历史记录
+  checkinHistorySection: {
+    marginTop: 24,
+    paddingTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  checkinHistoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkinHistoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  checkinHistoryCount: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  checkinHistoryEmpty: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  checkinHistoryList: {
+    gap: 8,
+  },
+  checkinHistoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+  },
+  checkinHistoryItemLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  checkinHistoryDate: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#000000',
+  },
+  checkinHistoryNote: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  checkinHistoryItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  checkinHistoryDelete: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 6,
+  },
+  checkinHistoryDeleteText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '500',
   },
   // 自定义频率间隔输入
   intervalInputContainer: {
