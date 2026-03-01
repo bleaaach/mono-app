@@ -52,6 +52,33 @@
 
 - 无
 
+### 已完成 ✅ (2026-03-01)
+
+- [x] 管理默认分类功能
+  - 关联 PRD: prd.md #习惯追踪
+  - 类型检查: ✅ 通过
+  - 审查结果: ✅ 通过
+  - 说明: 支持编辑默认分类（健康、学习、工作等）的名称和颜色，可重置为初始值
+  - 修改文件:
+    - storage.ts - 添加 DefaultCategoryOverride 类型和存储
+    - HabitScreen.tsx - 实现分类编辑功能、优化分类管理弹窗UI
+
+- [x] 日期选择器优化
+  - 关联 PRD: prd.md #习惯追踪
+  - 类型检查: ✅ 通过
+  - 审查结果: ✅ 通过
+  - 说明: 将截止日期的文本输入改为原生日期选择器，支持清除选择
+  - 修改文件:
+    - HabitScreen.tsx - 集成 @react-native-community/datetimepicker
+
+- [x] 习惯详情页UI优化
+  - 关联 PRD: prd.md #习惯追踪
+  - 类型检查: ✅ 通过
+  - 审查结果: ✅ 通过
+  - 说明: 优化操作按钮样式（编辑/暂停/归档/删除），添加分割线，统一UI风格
+  - 修改文件:
+    - HabitScreen.tsx - 优化按钮样式和间距
+
 ### 待处理 ⏳
 
 - 数据统计页面优化 (PRD: HABIT_PRD.md #Stats)
@@ -59,6 +86,7 @@
 - 动画效果完善 (PRD: HABIT_PRD.md #UI优化)
 - 日记无限滚动加载 (PRD: DIARY_PRD.md #Timeline)
 - 日记软删除功能 (PRD: DIARY_PRD.md #Delete)
+- 习惯打卡日志功能 (PRD: prd.md #习惯追踪)
 
 ### 今日总结
 
