@@ -16,6 +16,8 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { TimeEntry, Activity, ActivityGroup, TimeGoal, Todo, Habit, HabitLog, TimeLinks } from '../types';
 import { Colors } from '../constants/colors';
 import { timeStorage, activityStorage, activityGroupStorage, timeGoalStorage, timeLinksStorage, todoStorage, habitStorage, habitLogStorage } from '../utils/storage';
@@ -130,6 +132,49 @@ export default function TimeScreen() {
   const [activeTab, setActiveTab] = useState<'timer' | 'activities' | 'stats' | 'history'>('timer');
   const [showAddActivityModal, setShowAddActivityModal] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<'today' | 'week' | 'month'>('today');
+  
+  // 手势滑动相关
+  const translateX = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const SWIPE_THRESHOLD = 60;
+  
+  const changeTab = useCallback((direction: 'left' | 'right') => {
+    const currentIndex = TIME_TABS.findIndex(t => t.key === activeTab);
+    if (direction === 'left' && currentIndex < TIME_TABS.length - 1) {
+      setActiveTab(TIME_TABS[currentIndex + 1].key as any);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setActiveTab(TIME_TABS[currentIndex - 1].key as any);
+    }
+  }, [activeTab]);
+
+  const onGestureEvent = useCallback((event: any) => {
+    'worklet';
+    translateX.value = startX.value + event.nativeEvent.translationX;
+  }, []);
+
+  const onHandlerStateChange = useCallback((event: any) => {
+    'worklet';
+    if (event.nativeEvent.state === State.END) {
+      const velocity = event.nativeEvent.velocityX;
+      const translation = event.nativeEvent.translationX;
+      
+      if (velocity < -500 || translation < -SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('left');
+      } else if (velocity > 500 || translation > SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('right');
+      }
+      
+      translateX.value = withSpring(0, { damping: 20, stiffness: 100 });
+    } else if (event.nativeEvent.state === State.BEGAN) {
+      startX.value = translateX.value;
+    }
+  }, [changeTab]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
 
   // 计时器状态
   const [isTracking, setIsTracking] = useState(false);
@@ -1258,10 +1303,19 @@ export default function TimeScreen() {
       </View>
 
       {/* 内容区域 */}
-      {activeTab === 'timer' && renderTimer()}
-      {activeTab === 'activities' && renderActivities()}
-      {activeTab === 'stats' && renderStats()}
-      {activeTab === 'history' && renderHistory()}
+      <PanGestureHandler 
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={[-15, 15]}
+        failOffsetY={[-15, 15]}
+      >
+        <Animated.View style={[styles.contentContainer, animatedStyle]}>
+          {activeTab === 'timer' && renderTimer()}
+          {activeTab === 'activities' && renderActivities()}
+          {activeTab === 'stats' && renderStats()}
+          {activeTab === 'history' && renderHistory()}
+        </Animated.View>
+      </PanGestureHandler>
 
       {/* 添加活动弹窗 */}
       <Modal
@@ -1648,6 +1702,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  contentContainer: {
+    flex: 1,
   },
   header: {
     paddingHorizontal: 20,

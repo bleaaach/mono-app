@@ -10,6 +10,7 @@
 import React, { useRef, useEffect } from 'react';
 import { NavigationContainer, NavigationContainerRef, CommonActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomTabs from './BottomTabs';
 
 // 日记功能页面
@@ -50,30 +51,32 @@ export default function AppNavigator() {
   }, []);
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator 
-        screenOptions={{ 
-          headerShown: false,
-          animation: 'slide_from_right',
-          animationDuration: 250,
-          gestureEnabled: true,
-          gestureDirection: 'horizontal',
-          contentStyle: { backgroundColor: '#FFFFFF' },
-        }}
-      >
-        <Stack.Screen name="Main" component={BottomTabs} />
-        <Stack.Screen 
-          name="Share" 
-          component={ShareScreen} 
-          options={{
-            animation: 'slide_from_bottom',
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator 
+          screenOptions={{ 
+            headerShown: false,
+            animation: 'slide_from_right',
+            animationDuration: 250,
             gestureEnabled: true,
-            gestureDirection: 'vertical',
+            gestureDirection: 'horizontal',
+            contentStyle: { backgroundColor: '#FFFFFF' },
           }}
-        />
-        <Stack.Screen name="RandomWalk" component={RandomWalkScreen} />
-        <Stack.Screen name="BookView" component={BookViewScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        >
+          <Stack.Screen name="Main" component={BottomTabs} />
+          <Stack.Screen 
+            name="Share" 
+            component={ShareScreen} 
+            options={{
+              animation: 'slide_from_bottom',
+              gestureEnabled: true,
+              gestureDirection: 'vertical',
+            }}
+          />
+          <Stack.Screen name="RandomWalk" component={RandomWalkScreen} />
+          <Stack.Screen name="BookView" component={BookViewScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }

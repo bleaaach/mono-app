@@ -1,6 +1,14 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useNavigation, useRoute, CommonActions } from '@react-navigation/native';
+import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withSpring, 
+  runOnJS,
+} from 'react-native-reanimated';
 import { RootTabParamList } from '../types';
 import { Colors } from '../constants/colors';
 
@@ -13,9 +21,12 @@ import TimeScreen from '../screens/TimeScreen';
 import LogNavigator from './LogNavigator';
 import SettingsScreen from '../screens/SettingsScreen';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TAB_SCREENS = ['Todo', 'Habit', 'Diary', 'Inventory', 'Time', 'Log', 'Settings'] as const;
+const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.2;
+
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
-// 图标组件 - 使用简单的几何形状代替特殊 Unicode 字符
 const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   const renderIcon = () => {
     switch (name) {
@@ -85,6 +96,87 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   );
 };
 
+interface SwipeGestureWrapperProps {
+  children: React.ReactNode;
+}
+
+function SwipeGestureWrapper({ children }: SwipeGestureWrapperProps) {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const translateX = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const currentTabIndex = useRef(0);
+
+  useEffect(() => {
+    currentTabIndex.current = TAB_SCREENS.indexOf(route.name as any);
+  }, [route.name]);
+
+  const navigateToTab = useCallback((index: number) => {
+    if (index >= 0 && index < TAB_SCREENS.length) {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: TAB_SCREENS[index],
+        })
+      );
+    }
+  }, [navigation]);
+
+  const onGestureEvent = useCallback((event: PanGestureHandlerGestureEvent) => {
+    'worklet';
+    translateX.value = startX.value + event.nativeEvent.translationX;
+  }, []);
+
+  const onHandlerStateChange = useCallback((event: PanGestureHandlerGestureEvent) => {
+    'worklet';
+    if (event.nativeEvent.state === 5) { // END state
+      const velocity = event.nativeEvent.velocityX;
+      const translation = event.nativeEvent.translationX;
+      const currentIdx = currentTabIndex.current;
+      
+      let newPage = currentIdx;
+      
+      if (Math.abs(velocity) > 500) {
+        if (velocity > 0 && currentIdx > 0) {
+          newPage = currentIdx - 1;
+        } else if (velocity < 0 && currentIdx < TAB_SCREENS.length - 1) {
+          newPage = currentIdx + 1;
+        }
+      } else if (translation < -SWIPE_THRESHOLD && currentIdx < TAB_SCREENS.length - 1) {
+        newPage = currentIdx + 1;
+      } else if (translation > SWIPE_THRESHOLD && currentIdx > 0) {
+        newPage = currentIdx - 1;
+      }
+      
+      translateX.value = withSpring(0, { damping: 20, stiffness: 100 });
+      
+      if (newPage !== currentIdx) {
+        runOnJS(navigateToTab)(newPage);
+      }
+    } else if (event.nativeEvent.state === 2) { // BEGAN state
+      startX.value = translateX.value;
+    }
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
+
+  return (
+    <PanGestureHandler 
+      onGestureEvent={onGestureEvent}
+      onHandlerStateChange={onHandlerStateChange}
+      activeOffsetX={[-20, 20]}
+      failOffsetY={[-20, 20]}
+    >
+      <Animated.View style={[styles.gestureWrapper, animatedStyle]}>
+        {children}
+      </Animated.View>
+    </PanGestureHandler>
+  );
+}
+
 export default function BottomTabs() {
   return (
     <Tab.Navigator
@@ -96,48 +188,87 @@ export default function BottomTabs() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.gray[400],
         tabBarIcon: ({ focused }) => <TabIcon name={route.name} focused={focused} />,
+        animation: 'shift',
       })}
     >
       <Tab.Screen 
         name="Todo" 
-        component={TodoScreen}
         options={{ tabBarLabel: '待办' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <TodoScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Habit" 
-        component={HabitScreen}
         options={{ tabBarLabel: '习惯' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <HabitScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Diary" 
-        component={DiaryScreen}
         options={{ tabBarLabel: '日记' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <DiaryScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Inventory" 
-        component={InventoryScreen}
         options={{ tabBarLabel: '收纳' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <InventoryScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Time" 
-        component={TimeScreen}
         options={{ tabBarLabel: '时间' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <TimeScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Log" 
-        component={LogNavigator}
         options={{ tabBarLabel: '日志' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <LogNavigator />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
       <Tab.Screen 
         name="Settings" 
-        component={SettingsScreen}
         options={{ tabBarLabel: '设置' }}
-      />
+      >
+        {() => (
+          <SwipeGestureWrapper>
+            <SettingsScreen />
+          </SwipeGestureWrapper>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureWrapper: {
+    flex: 1,
+  },
   tabBar: {
     backgroundColor: Colors.background,
     borderTopWidth: 1,
@@ -163,17 +294,13 @@ const styles = StyleSheet.create({
   iconContainerActive: {
     backgroundColor: Colors.primary,
   },
-  // 图标形状样式
   iconShape: {
     width: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconShapeActive: {
-    // 激活状态的通用样式
-  },
-  // Todo - 方形图标
+  iconShapeActive: {},
   squareShape: {
     borderWidth: 2,
     borderColor: Colors.gray[400],
@@ -187,7 +314,6 @@ const styles = StyleSheet.create({
   innerSquareActive: {
     backgroundColor: Colors.background,
   },
-  // Habit - 圆形图标
   circleShape: {
     borderWidth: 2,
     borderColor: Colors.gray[400],
@@ -202,7 +328,6 @@ const styles = StyleSheet.create({
   innerCircleActive: {
     backgroundColor: Colors.background,
   },
-  // Diary - 笔形图标
   penShape: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -217,7 +342,6 @@ const styles = StyleSheet.create({
   penLineActive: {
     backgroundColor: Colors.background,
   },
-  // Inventory - 网格图标
   gridShape: {
     flexDirection: 'column',
     justifyContent: 'space-between',
@@ -237,7 +361,6 @@ const styles = StyleSheet.create({
   gridCellActive: {
     backgroundColor: Colors.background,
   },
-  // Time - 时钟图标
   clockShape: {
     borderWidth: 2,
     borderColor: Colors.gray[400],
@@ -266,7 +389,6 @@ const styles = StyleSheet.create({
   clockHandActive: {
     backgroundColor: Colors.background,
   },
-  // Log - 日志图标（三条横线）
   logShape: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -287,7 +409,6 @@ const styles = StyleSheet.create({
   logLineActive: {
     backgroundColor: Colors.background,
   },
-  // Settings - 设置图标（三个点）
   settingsShape: {
     width: 20,
     height: 20,

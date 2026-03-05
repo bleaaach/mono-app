@@ -24,6 +24,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { PieChart } from 'react-native-chart-kit';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import AnimatedLib, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { DiaryEntry, DiaryEditHistory, CustomMood, MoodAnalysis } from '../types';
 import { Colors } from '../constants/colors';
 import { diaryStorage } from '../utils/storage';
@@ -90,6 +92,50 @@ export default function DiaryScreen() {
   const [selectedTag, setSelectedTag] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [customTags, setCustomTags] = useState<string[]>([]);
+  
+  // 手势滑动相关
+  const translateX = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const DIARY_TABS: DiaryTab[] = ['timeline', 'calendar', 'stats'];
+  const SWIPE_THRESHOLD = 60;
+  
+  const changeTab = useCallback((direction: 'left' | 'right') => {
+    const currentIndex = DIARY_TABS.indexOf(activeTab);
+    if (direction === 'left' && currentIndex < DIARY_TABS.length - 1) {
+      setActiveTab(DIARY_TABS[currentIndex + 1]);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setActiveTab(DIARY_TABS[currentIndex - 1]);
+    }
+  }, [activeTab]);
+
+  const onGestureEvent = useCallback((event: any) => {
+    'worklet';
+    translateX.value = startX.value + event.nativeEvent.translationX;
+  }, []);
+
+  const onHandlerStateChange = useCallback((event: any) => {
+    'worklet';
+    if (event.nativeEvent.state === State.END) {
+      const velocity = event.nativeEvent.velocityX;
+      const translation = event.nativeEvent.translationX;
+      
+      if (velocity < -500 || translation < -SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('left');
+      } else if (velocity > 500 || translation > SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('right');
+      }
+      
+      translateX.value = withSpring(0, { damping: 20, stiffness: 100 });
+    } else if (event.nativeEvent.state === State.BEGAN) {
+      startX.value = translateX.value;
+    }
+  }, [changeTab]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
   
   const [showEditor, setShowEditor] = useState(false);
   const [editingEntry, setEditingEntry] = useState<DiaryEntry | null>(null);
@@ -1680,11 +1726,18 @@ export default function DiaryScreen() {
       </View>
 
       {/* 内容区域 */}
-      <View style={styles.content}>
-        {activeTab === 'timeline' && renderTimeline()}
-        {activeTab === 'calendar' && renderCalendar()}
-        {activeTab === 'stats' && renderStats()}
-      </View>
+      <PanGestureHandler 
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={[-15, 15]}
+        failOffsetY={[-15, 15]}
+      >
+        <AnimatedLib.View style={[styles.content, animatedStyle]}>
+          {activeTab === 'timeline' && renderTimeline()}
+          {activeTab === 'calendar' && renderCalendar()}
+          {activeTab === 'stats' && renderStats()}
+        </AnimatedLib.View>
+      </PanGestureHandler>
 
       {/* 编辑弹窗 */}
       <Modal

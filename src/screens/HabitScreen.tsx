@@ -18,6 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
+import AnimatedLib, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { Habit, HabitLog, HabitStats } from '../types';
 import { Colors } from '../constants/colors';
 import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory, defaultCategoryOverrideStorage, DefaultCategoryOverride } from '../utils/storage';
@@ -238,6 +239,50 @@ export default function HabitScreen() {
   const [habitLogs, setHabitLogs] = useState<HabitLog[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  
+  // 手势滑动相关
+  const translateX = useSharedValue(0);
+  const startX = useSharedValue(0);
+  const HABIT_TABS: TabType[] = ['overview', 'habits', 'insights', 'archived'];
+  const SWIPE_THRESHOLD = 60;
+  
+  const changeTab = useCallback((direction: 'left' | 'right') => {
+    const currentIndex = HABIT_TABS.indexOf(activeTab);
+    if (direction === 'left' && currentIndex < HABIT_TABS.length - 1) {
+      setActiveTab(HABIT_TABS[currentIndex + 1]);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setActiveTab(HABIT_TABS[currentIndex - 1]);
+    }
+  }, [activeTab]);
+
+  const onGestureEvent = useCallback((event: any) => {
+    'worklet';
+    translateX.value = startX.value + event.nativeEvent.translationX;
+  }, []);
+
+  const onHandlerStateChange = useCallback((event: any) => {
+    'worklet';
+    if (event.nativeEvent.state === State.END) {
+      const velocity = event.nativeEvent.velocityX;
+      const translation = event.nativeEvent.translationX;
+      
+      if (velocity < -500 || translation < -SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('left');
+      } else if (velocity > 500 || translation > SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('right');
+      }
+      
+      translateX.value = withSpring(0, { damping: 20, stiffness: 100 });
+    } else if (event.nativeEvent.state === State.BEGAN) {
+      startX.value = translateX.value;
+    }
+  }, [changeTab]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
   
   // 热力图年份切换
   const [heatmapYear, setHeatmapYear] = useState<number>(new Date().getFullYear());
@@ -2251,10 +2296,19 @@ export default function HabitScreen() {
         </View>
 
         {/* 内容区域 */}
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'habits' && renderHabitsList()}
-        {activeTab === 'insights' && renderInsights()}
-        {activeTab === 'archived' && renderArchivedHabits()}
+        <PanGestureHandler 
+          onGestureEvent={onGestureEvent}
+          onHandlerStateChange={onHandlerStateChange}
+          activeOffsetX={[-15, 15]}
+          failOffsetY={[-15, 15]}
+        >
+          <AnimatedLib.View style={[styles.contentContainer, animatedStyle]}>
+            {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'habits' && renderHabitsList()}
+            {activeTab === 'insights' && renderInsights()}
+            {activeTab === 'archived' && renderArchivedHabits()}
+          </AnimatedLib.View>
+        </PanGestureHandler>
       </SafeAreaView>
 
       {/* 添加/编辑习惯弹窗 */}
@@ -3161,6 +3215,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  contentContainer: {
+    flex: 1,
   },
   subNav: {
     borderBottomWidth: 1,

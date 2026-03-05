@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,19 +13,27 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withSpring, 
+  runOnJS,
+} from 'react-native-reanimated';
 import { Todo } from '../types';
 import { Colors } from '../constants/colors';
 import { todoStorage } from '../utils/storage';
 import { getTodayString, formatDate, getRelativeTime, generateId } from '../utils/date';
 import { CheckIcon } from '../components/Icons';
 
-// 待办分类
 const CATEGORIES = [
   { key: 'today', label: '今天' },
   { key: 'upcoming', label: '计划' },
   { key: 'anytime', label: '随时' },
   { key: 'someday', label: '某天' },
 ] as const;
+
+const SWIPE_THRESHOLD = 60;
 
 export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -34,8 +42,10 @@ export default function TodoScreen() {
   const [newTodoTitle, setNewTodoTitle] = useState('');
   const [showCompleted, setShowCompleted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  const translateX = useSharedValue(0);
+  const startX = useSharedValue(0);
 
-  // 加载数据
   const loadTodos = useCallback(async () => {
     const data = await todoStorage.get();
     if (data) setTodos(data);
@@ -47,20 +57,17 @@ export default function TodoScreen() {
     }, [loadTodos])
   );
 
-  // 下拉刷新
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadTodos();
     setRefreshing(false);
   }, [loadTodos]);
 
-  // 保存数据
   const saveTodos = useCallback(async (newTodos: Todo[]) => {
     setTodos(newTodos);
     await todoStorage.set(newTodos);
   }, []);
 
-  // 添加待办
   const addTodo = useCallback(() => {
     if (!newTodoTitle.trim()) return;
     
@@ -77,7 +84,6 @@ export default function TodoScreen() {
     setShowAddModal(false);
   }, [newTodoTitle, activeTab, todos, saveTodos]);
 
-  // 切换完成状态
   const toggleTodo = useCallback((id: string) => {
     const newTodos = todos.map(todo =>
       todo.id === id ? { ...todo, completed: !todo.completed } : todo
@@ -85,13 +91,11 @@ export default function TodoScreen() {
     saveTodos(newTodos);
   }, [todos, saveTodos]);
 
-  // 删除待办
   const deleteTodo = useCallback((id: string) => {
     const newTodos = todos.filter(todo => todo.id !== id);
     saveTodos(newTodos);
   }, [todos, saveTodos]);
 
-  // 获取当前标签的待办 - 使用 useMemo 优化
   const filteredTodos = useMemo(() => 
     todos.filter(todo => todo.category === activeTab && !todo.completed),
     [todos, activeTab]
@@ -102,7 +106,6 @@ export default function TodoScreen() {
     [todos, activeTab]
   );
   
-  // 渲染待办项 - 使用 useCallback 优化
   const renderTodoItem = useCallback(({ item }: { item: Todo }) => (
     <TouchableOpacity 
       style={styles.todoItem}
@@ -118,11 +121,48 @@ export default function TodoScreen() {
     </TouchableOpacity>
   ), [toggleTodo]);
 
+  const changeTab = useCallback((direction: 'left' | 'right') => {
+    const currentIndex = CATEGORIES.findIndex(c => c.key === activeTab);
+    if (direction === 'left' && currentIndex < CATEGORIES.length - 1) {
+      setActiveTab(CATEGORIES[currentIndex + 1].key as any);
+    } else if (direction === 'right' && currentIndex > 0) {
+      setActiveTab(CATEGORIES[currentIndex - 1].key as any);
+    }
+  }, [activeTab]);
+
+  const onGestureEvent = useCallback((event: PanGestureHandlerGestureEvent) => {
+    'worklet';
+    translateX.value = startX.value + event.nativeEvent.translationX;
+  }, []);
+
+  const onHandlerStateChange = useCallback((event: PanGestureHandlerGestureEvent) => {
+    'worklet';
+    if (event.nativeEvent.state === 5) {
+      const velocity = event.nativeEvent.velocityX;
+      const translation = event.nativeEvent.translationX;
+      
+      if (velocity < -500 || translation < -SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('left');
+      } else if (velocity > 500 || translation > SWIPE_THRESHOLD) {
+        runOnJS(changeTab)('right');
+      }
+      
+      translateX.value = withSpring(0, { damping: 20, stiffness: 100 });
+    } else if (event.nativeEvent.state === 2) {
+      startX.value = translateX.value;
+    }
+  }, [changeTab]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       
-      {/* 子导航 */}
       <View style={styles.subNav}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.subNavContent}>
@@ -144,70 +184,71 @@ export default function TodoScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 内容区域 */}
-      <View style={styles.content}>
-        {/* 标题 */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>
-            {CATEGORIES.find(c => c.key === activeTab)?.label}
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {activeTab === 'today' ? formatDate(getTodayString()) : 
-             activeTab === 'upcoming' ? '即将到来的任务' :
-             activeTab === 'anytime' ? '没有特定时间的任务' : '将来可能会做的任务'}
-          </Text>
-        </View>
-
-        {/* 快速输入 */}
-        <TouchableOpacity 
-          style={styles.quickInput}
-          onPress={() => setShowAddModal(true)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.quickInputCircle} />
-          <Text style={styles.quickInputText}>添加新任务...</Text>
-        </TouchableOpacity>
-
-        {/* 待办列表 */}
-        <FlatList
-          data={filteredTodos}
-          keyExtractor={item => item.id}
-          renderItem={renderTodoItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          getItemLayout={(data, index) => ({ length: 56, offset: 56 * index, index })}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={true}
-        />
-
-        {/* 已完成区域 */}
-        {completedTodos.length > 0 && (
-          <View style={styles.completedSection}>
-            <TouchableOpacity 
-              style={styles.completedHeader}
-              onPress={() => setShowCompleted(!showCompleted)}
-            >
-              <Text style={styles.completedArrow}>{showCompleted ? '▼' : '▶'}</Text>
-              <Text style={styles.completedText}>已完成 {completedTodos.length}</Text>
-            </TouchableOpacity>
-            {showCompleted && (
-              <FlatList
-                data={completedTodos}
-                keyExtractor={item => item.id}
-                renderItem={renderTodoItem}
-                scrollEnabled={false}
-              />
-            )}
+      <PanGestureHandler 
+        onGestureEvent={onGestureEvent}
+        onHandlerStateChange={onHandlerStateChange}
+        activeOffsetX={[-15, 15]}
+        failOffsetY={[-15, 15]}
+      >
+        <Animated.View style={[styles.content, animatedStyle]}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>
+              {CATEGORIES.find(c => c.key === activeTab)?.label}
+            </Text>
+            <Text style={styles.headerSubtitle}>
+              {activeTab === 'today' ? formatDate(getTodayString()) : 
+               activeTab === 'upcoming' ? '即将到来的任务' :
+               activeTab === 'anytime' ? '没有特定时间的任务' : '将来可能会做的任务'}
+            </Text>
           </View>
-        )}
-      </View>
 
-      {/* 添加模态框 */}
+          <TouchableOpacity 
+            style={styles.quickInput}
+            onPress={() => setShowAddModal(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.quickInputCircle} />
+            <Text style={styles.quickInputText}>添加新任务...</Text>
+          </TouchableOpacity>
+
+          <FlatList
+            data={filteredTodos}
+            keyExtractor={item => item.id}
+            renderItem={renderTodoItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            getItemLayout={(data, index) => ({ length: 56, offset: 56 * index, index })}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={true}
+          />
+
+          {completedTodos.length > 0 && (
+            <View style={styles.completedSection}>
+              <TouchableOpacity 
+                style={styles.completedHeader}
+                onPress={() => setShowCompleted(!showCompleted)}
+              >
+                <Text style={styles.completedArrow}>{showCompleted ? '▼' : '▶'}</Text>
+                <Text style={styles.completedText}>已完成 {completedTodos.length}</Text>
+              </TouchableOpacity>
+              {showCompleted && (
+                <FlatList
+                  data={completedTodos}
+                  keyExtractor={item => item.id}
+                  renderItem={renderTodoItem}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          )}
+        </Animated.View>
+      </PanGestureHandler>
+
       <Modal
         visible={showAddModal}
         transparent
@@ -356,11 +397,6 @@ const styles = StyleSheet.create({
   checkboxChecked: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
-  },
-  checkmark: {
-    color: Colors.background,
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   todoTitle: {
     fontSize: 16,

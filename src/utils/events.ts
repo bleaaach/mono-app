@@ -1,3 +1,12 @@
+/*
+ * @Author: Bleaach008
+ * @Date: 2026-03-01 21:28:39
+ * @LastEditTime: 2026-03-05 22:14:04
+ * @FilePath: \mono-app\src\utils\events.ts
+ * @Description: 
+ * 
+ * Copyright (c) 2026 by 008, All Rights Reserved. 
+ */
 type EventCallback = (data?: any) => void;
 
 class EventEmitter {
