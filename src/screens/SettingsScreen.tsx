@@ -25,6 +25,7 @@ import {
   clearAllData,
   exportAllLifeLogsToCSV,
 } from '../utils/backupUtils';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 export default function SettingsScreen() {
   const [metadata, setMetadata] = useState<BackupMetadata | null>(null);
@@ -583,7 +584,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     height: 200,
-    fontSize: 14,
+    fontSize: FontSizes.sm,
     color: Colors.text,
     backgroundColor: Colors.gray[50],
     textAlignVertical: 'top',

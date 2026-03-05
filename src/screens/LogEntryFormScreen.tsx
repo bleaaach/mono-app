@@ -16,6 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { LifeLogCategory, LifeLogEntry, LogField } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/id';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 export default function LogEntryFormScreen() {
   const navigation = useNavigation();
@@ -400,7 +401,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   textInput: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: '#000',
     padding: 12,
     backgroundColor: '#fff',

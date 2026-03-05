@@ -17,13 +17,14 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import AnimatedLib, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { Habit, HabitLog, HabitStats } from '../types';
 import { Colors } from '../constants/colors';
 import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory, defaultCategoryOverrideStorage, DefaultCategoryOverride } from '../utils/storage';
 import { getTodayString, formatDate } from '../utils/date';
 import { generateId } from '../utils/id';
+import { FontSizes, scaleFont } from '../utils/responsive';
 import {
   HealthIcon,
   StudyIcon,
@@ -2299,8 +2300,8 @@ export default function HabitScreen() {
         <PanGestureHandler 
           onGestureEvent={onGestureEvent}
           onHandlerStateChange={onHandlerStateChange}
-          activeOffsetX={[-15, 15]}
-          failOffsetY={[-15, 15]}
+          activeOffsetX={[-50, 50]}
+          failOffsetY={[-30, 30]}
         >
           <AnimatedLib.View style={[styles.contentContainer, animatedStyle]}>
             {activeTab === 'overview' && renderOverview()}
@@ -3894,10 +3895,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   achievementBadge: {
-    width: (SCREEN_WIDTH - 72) / 2,
+    width: '48%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -4238,7 +4239,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   modalInput: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: '#F9FAFB',

@@ -26,6 +26,7 @@ import {
   storageStatistics,
 } from '../utils/storage';
 import { Colors } from '../constants/colors';
+import { FontSizes, scaleFont } from '../utils/responsive';
 import * as ImagePicker from 'expo-image-picker';
 import {
   HomeSpaceIcon,
@@ -2016,7 +2017,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   searchInput: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],
@@ -2442,7 +2443,7 @@ categorySection: {
     marginBottom: 8,
   },
   modalInput: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],

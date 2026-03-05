@@ -17,6 +17,7 @@ import { LifeLogCategory, LifeLogEntry, LogField } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
 import { StarIcon } from '../components/Icons';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 type LifeLogStackParamList = {
   LifeLogHome: undefined;
@@ -568,7 +569,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: '#000000',
   },
   textArea: {

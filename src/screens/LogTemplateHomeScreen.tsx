@@ -17,6 +17,7 @@ import { LifeLogCategory, LifeLogEntry } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
 import { Colors } from '../constants/colors';
+import { FontSizes, scaleFont } from '../utils/responsive';
 import type { LogStackParamList } from '../navigation/LogNavigator';
 import {
   MovieIcon,
@@ -519,7 +520,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: '#000000',
   },
   createButton: {

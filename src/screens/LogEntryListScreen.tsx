@@ -18,6 +18,7 @@ import { LifeLogCategory, LifeLogEntry } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { formatDate } from '../utils/date';
 import type { LogStackParamList } from '../navigation/LogNavigator';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 export default function LogEntryListScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<LogStackParamList>>();

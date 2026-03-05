@@ -167,8 +167,8 @@ function SwipeGestureWrapper({ children }: SwipeGestureWrapperProps) {
     <PanGestureHandler 
       onGestureEvent={onGestureEvent}
       onHandlerStateChange={onHandlerStateChange}
-      activeOffsetX={[-20, 20]}
-      failOffsetY={[-20, 20]}
+      activeOffsetX={[-50, 50]}
+      failOffsetY={[-30, 30]}
     >
       <Animated.View style={[styles.gestureWrapper, animatedStyle]}>
         {children}

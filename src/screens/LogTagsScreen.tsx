@@ -17,6 +17,7 @@ import { LifeLogCategory, LifeLogEntry } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { LogStackParamList } from '../navigation/LogNavigator';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 interface TagStats {
   name: string;

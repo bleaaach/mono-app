@@ -22,6 +22,7 @@ import { DiaryEntry } from '../../types';
 import ShareCard, { ShareTemplate } from '../../components/diary/ShareCard';
 import { diaryStorage } from '../../utils/storage';
 import { RootStackParamList } from '../../navigation/AppNavigator';
+import { FontSizes, scaleFont } from '../../utils/responsive';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width - 48;
@@ -503,8 +504,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   captionInput: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: FontSizes.md,
+    lineHeight: scaleFont(22),
     color: '#333',
     minHeight: 80,
     textAlignVertical: 'top',

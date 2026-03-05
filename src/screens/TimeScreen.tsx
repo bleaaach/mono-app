@@ -16,13 +16,14 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import { PanGestureHandler, State, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { TimeEntry, Activity, ActivityGroup, TimeGoal, Todo, Habit, HabitLog, TimeLinks } from '../types';
 import { Colors } from '../constants/colors';
 import { timeStorage, activityStorage, activityGroupStorage, timeGoalStorage, timeLinksStorage, todoStorage, habitStorage, habitLogStorage } from '../utils/storage';
 import { getTodayString, generateId, getCurrentTime } from '../utils/date';
 import { createHabitLog, isCompletedToday } from '../utils/habitUtils';
+import { FontSizes, scaleFont } from '../utils/responsive';
 import {
   WorkIcon,
   StudyIcon,
@@ -1287,7 +1288,7 @@ export default function TimeScreen() {
 
       {/* 子导航 */}
       <View style={styles.subNav}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <GHScrollView horizontal showsHorizontalScrollIndicator={false}>
           {TIME_TABS.map(tab => (
             <TouchableOpacity
               key={tab.key}
@@ -1299,15 +1300,15 @@ export default function TimeScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </GHScrollView>
       </View>
 
       {/* 内容区域 */}
       <PanGestureHandler 
         onGestureEvent={onGestureEvent}
         onHandlerStateChange={onHandlerStateChange}
-        activeOffsetX={[-15, 15]}
-        failOffsetY={[-15, 15]}
+        activeOffsetX={[-50, 50]}
+        failOffsetY={[-30, 30]}
       >
         <Animated.View style={[styles.contentContainer, animatedStyle]}>
           {activeTab === 'timer' && renderTimer()}
@@ -2269,7 +2270,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modalInput: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     paddingVertical: 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],

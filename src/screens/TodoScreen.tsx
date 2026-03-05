@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import { PanGestureHandler, PanGestureHandlerGestureEvent, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -25,6 +25,7 @@ import { Colors } from '../constants/colors';
 import { todoStorage } from '../utils/storage';
 import { getTodayString, formatDate, getRelativeTime, generateId } from '../utils/date';
 import { CheckIcon } from '../components/Icons';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 const CATEGORIES = [
   { key: 'today', label: '今天' },
@@ -164,7 +165,7 @@ export default function TodoScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       
       <View style={styles.subNav}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <GHScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.subNavContent}>
             {CATEGORIES.map(cat => (
               <TouchableOpacity
@@ -178,7 +179,7 @@ export default function TodoScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        </ScrollView>
+        </GHScrollView>
         <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
@@ -187,8 +188,8 @@ export default function TodoScreen() {
       <PanGestureHandler 
         onGestureEvent={onGestureEvent}
         onHandlerStateChange={onHandlerStateChange}
-        activeOffsetX={[-15, 15]}
-        failOffsetY={[-15, 15]}
+        activeOffsetX={[-50, 50]}
+        failOffsetY={[-30, 30]}
       >
         <Animated.View style={[styles.content, animatedStyle]}>
           <View style={styles.header}>
@@ -371,7 +372,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   quickInputText: {
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: Colors.textMuted,
   },
   listContent: {
@@ -445,7 +446,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalInput: {
-    fontSize: 18,
+    fontSize: FontSizes.xl,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,

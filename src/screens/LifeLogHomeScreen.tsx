@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LifeLogCategory, LifeLogEntry, LogField } from '../types';
 import { lifeLogCategoryStorage, lifeLogEntryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
+import { FontSizes, scaleFont } from '../utils/responsive';
 import {
   MovieIcon,
   ReadIcon,
@@ -505,7 +506,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: '#000000',
     marginBottom: 20,
   },

@@ -31,6 +31,7 @@ import { Colors } from '../constants/colors';
 import { diaryStorage } from '../utils/storage';
 import { diaryEvents, DIARY_EVENTS, setPendingEditEntry, getPendingEditEntry } from '../utils/events';
 import { getTodayString, formatDate, generateId } from '../utils/date';
+import { scaleFont, FontSizes, isSmallDevice } from '../utils/responsive';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import {
   SunnyMoodIcon,
@@ -1064,7 +1065,7 @@ export default function DiaryScreen() {
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false} 
-            style={styles.tagFilterContainer}
+            contentContainerStyle={styles.tagFilterScrollContent}
           >
             <TouchableOpacity
               style={[styles.tagFilterBtn, selectedTag === 'all' && styles.tagFilterBtnActive]}
@@ -1729,8 +1730,8 @@ export default function DiaryScreen() {
       <PanGestureHandler 
         onGestureEvent={onGestureEvent}
         onHandlerStateChange={onHandlerStateChange}
-        activeOffsetX={[-15, 15]}
-        failOffsetY={[-15, 15]}
+        activeOffsetX={[-50, 50]}
+        failOffsetY={[-30, 30]}
       >
         <AnimatedLib.View style={[styles.content, animatedStyle]}>
           {activeTab === 'timeline' && renderTimeline()}
@@ -2318,8 +2319,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchInput: {
-    width: 100,
-    fontSize: 14,
+    width: isSmallDevice ? 80 : 100,
+    fontSize: FontSizes.sm,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
     paddingVertical: 4,
@@ -2369,8 +2370,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   tagFilterContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    flex: 1,
+  },
+  tagFilterScrollContent: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 8,
   },
   tagFilterBtn: {
     paddingHorizontal: 14,
@@ -3071,8 +3076,8 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   modalInput: {
-    fontSize: 16,
-    lineHeight: 26,
+    fontSize: FontSizes.lg,
+    lineHeight: scaleFont(26),
     minHeight: 180,
     textAlignVertical: 'top',
     color: '#000000',
@@ -3435,7 +3440,7 @@ const styles = StyleSheet.create({
   },
   tagInputField: {
     flex: 1,
-    fontSize: 14,
+    fontSize: FontSizes.sm,
     color: '#000000',
     paddingVertical: 4,
   },
@@ -3693,6 +3698,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     borderRadius: 16,
     gap: 4,
+    flexShrink: 0,
   },
   jumpBtnText: {
     fontSize: 12,
@@ -3727,7 +3733,7 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   jumpInput: {
-    fontSize: 24,
+    fontSize: FontSizes.xxl,
     fontWeight: '600',
     color: '#000',
     borderBottomWidth: 2,
@@ -3880,7 +3886,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 8,
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     marginBottom: 12,
   },
   addCustomMoodBtn: {

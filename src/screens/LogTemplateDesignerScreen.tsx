@@ -18,6 +18,7 @@ import { LifeLogCategory, LogField } from '../types';
 import { lifeLogCategoryStorage } from '../utils/storage';
 import { generateId } from '../utils/date';
 import type { LogStackParamList } from '../navigation/LogNavigator';
+import { FontSizes, scaleFont } from '../utils/responsive';
 
 type NavigationProp = NativeStackNavigationProp<LogStackParamList>;
 type RouteProps = RouteProp<LogStackParamList, 'LogTemplateDesigner'>;
@@ -405,7 +406,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: FontSizes.lg,
     color: '#000000',
   },
   emptyFields: {
