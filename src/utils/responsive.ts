@@ -22,8 +22,23 @@ export const moderateScale = (size: number, factor: number = 0.5): number => {
 };
 
 export const scaleFont = (size: number): number => {
-  const scaledSize = moderateScale(size, 0.3);
-  return Math.round(PixelRatio.roundToNearestPixel(scaledSize));
+  // 更激进的字体缩放策略
+  const scaleFactor = shortDimension / BASE_WIDTH;
+  
+  // 对于小屏设备，使用更激进的缩放
+  let finalSize: number;
+  if (scaleFactor < 0.9) {
+    // 小屏设备：额外缩小 15%
+    finalSize = size * scaleFactor * 0.85;
+  } else if (scaleFactor < 1.0) {
+    // 中等偏小设备：额外缩小 5%
+    finalSize = size * scaleFactor * 0.95;
+  } else {
+    // 正常或大屏设备：正常缩放
+    finalSize = size * scaleFactor;
+  }
+  
+  return Math.round(PixelRatio.roundToNearestPixel(finalSize));
 };
 
 export const isSmallDevice = SCREEN_WIDTH < 375;
@@ -49,6 +64,9 @@ export const FontSizes = {
   xxxl: getResponsiveFontSize(24),
   title: getResponsiveFontSize(28),
   hero: getResponsiveFontSize(32),
+  // 输入框专用 - 更小的字体
+  input: isSmallDevice ? scaleFont(12) : scaleFont(14),
+  inputSmall: isSmallDevice ? scaleFont(11) : scaleFont(13),
 };
 
 export const Spacing = {

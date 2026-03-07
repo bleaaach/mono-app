@@ -505,13 +505,16 @@ const styles = StyleSheet.create({
   },
   captionInput: {
     fontSize: FontSizes.md,
-    lineHeight: scaleFont(22),
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : scaleFont(22),
     color: '#333',
     minHeight: 80,
     textAlignVertical: 'top',
     padding: 12,
     backgroundColor: '#F9F9F9',
     borderRadius: 12,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+    }),
   },
   captionCount: {
     fontSize: 12,

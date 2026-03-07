@@ -408,10 +408,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   multilineInput: {
     height: 100,
     textAlignVertical: 'top',
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      paddingTop: 12,
+      paddingBottom: 12,
+    }),
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -480,6 +491,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    lineHeight: Platform.OS === 'android' ? scaleFont(22) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   addTagButton: {
     width: 44,

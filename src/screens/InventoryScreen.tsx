@@ -12,6 +12,7 @@ import {
   Image,
   Alert,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -27,6 +28,7 @@ import {
 } from '../utils/storage';
 import { Colors } from '../constants/colors';
 import { FontSizes, scaleFont } from '../utils/responsive';
+import { getAndroidInputStyle, getAndroidMultilineInputStyle } from '../utils/platformStyles';
 import * as ImagePicker from 'expo-image-picker';
 import {
   HomeSpaceIcon,
@@ -2018,10 +2020,16 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     fontSize: FontSizes.lg,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 12,
+    paddingBottom: Platform.OS === 'android' ? 12 : 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   content: {
     flex: 1,
@@ -2444,11 +2452,17 @@ categorySection: {
   },
   modalInput: {
     fontSize: FontSizes.lg,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 12,
+    paddingBottom: Platform.OS === 'android' ? 12 : 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
     color: Colors.text,
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   modalInputMultiline: {
     height: 80,

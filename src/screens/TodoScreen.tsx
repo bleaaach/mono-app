@@ -10,6 +10,7 @@ import {
   Modal,
   ScrollView,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -447,10 +448,16 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     fontSize: FontSizes.xl,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 12,
+    paddingBottom: Platform.OS === 'android' ? 12 : 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
     marginBottom: 24,
+    lineHeight: Platform.OS === 'android' ? scaleFont(26) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   modalButtons: {
     flexDirection: 'row',

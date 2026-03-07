@@ -25,6 +25,7 @@ import { habitStorage, habitLogStorage, customCategoryStorage, CustomCategory, d
 import { getTodayString, formatDate } from '../utils/date';
 import { generateId } from '../utils/id';
 import { FontSizes, scaleFont } from '../utils/responsive';
+import { getAndroidInputStyle, getAndroidMultilineInputStyle } from '../utils/platformStyles';
 import {
   HealthIcon,
   StudyIcon,
@@ -2329,8 +2330,8 @@ export default function HabitScreen() {
               {/* 名称输入 */}
               <Text style={styles.modalLabel}>习惯名称</Text>
               <TextInput
-                style={styles.modalInput}
-                placeholder="例如：每天阅读30分钟..."
+                style={[styles.modalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
+                placeholder="例如：每天阅读 30 分钟..."
                 value={habitName}
                 onChangeText={setHabitName}
                 autoFocus
@@ -2409,7 +2410,7 @@ export default function HabitScreen() {
                 <View style={styles.intervalInputContainer}>
                   <Text style={styles.intervalLabel}>每</Text>
                   <TextInput
-                    style={styles.intervalInput}
+                    style={[styles.intervalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
                     value={String(habitFrequencyInterval)}
                     onChangeText={(text) => {
                       const num = parseInt(text) || 1;
@@ -2449,7 +2450,7 @@ export default function HabitScreen() {
                     {habitTarget === 'streak' ? '连续' : '累计'}目标
                   </Text>
                   <TextInput
-                    style={styles.targetValueInput}
+                    style={[styles.targetValueInput, Platform.OS === 'android' && getAndroidInputStyle()]}
                     value={String(habitTargetValue)}
                     onChangeText={(text) => {
                       const num = parseInt(text) || 1;
@@ -2572,7 +2573,7 @@ export default function HabitScreen() {
             
             <Text style={[styles.modalLabel, { marginTop: 16 }]}>备注（可选）</Text>
             <TextInput
-              style={[styles.modalInput, styles.noteInput]}
+              style={[styles.modalInput, styles.noteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
               placeholder="添加备注..."
               value={makeupNote}
               onChangeText={setMakeupNote}
@@ -2612,8 +2613,8 @@ export default function HabitScreen() {
             </Text>
             
             <TextInput
-              style={styles.checkinNoteInput}
-              placeholder="例如：今天感觉不错，完成了5公里跑步..."
+              style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
+              placeholder="例如：今天感觉不错，完成了 5 公里跑步..."
               value={checkinNoteText}
               onChangeText={setCheckinNoteText}
               multiline
@@ -2706,7 +2707,7 @@ export default function HabitScreen() {
             </Text>
             
             <TextInput
-              style={styles.checkinNoteInput}
+              style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
               placeholder="添加备注（可选）..."
               value={makeupNoteText}
               onChangeText={setMakeupNoteText}
@@ -3047,7 +3048,7 @@ export default function HabitScreen() {
               <View style={styles.addCategorySection}>
                 <Text style={[styles.modalLabel, { marginBottom: 4 }]}>添加新分类</Text>
                 <TextInput
-                  style={[styles.modalInput, { marginBottom: 8 }]}
+                  style={[styles.modalInput, { marginBottom: 8 }, Platform.OS === 'android' && getAndroidInputStyle()]}
                   placeholder="输入分类名称"
                   value={newCategoryName}
                   onChangeText={setNewCategoryName}
@@ -3087,7 +3088,7 @@ export default function HabitScreen() {
                     </TouchableOpacity>
                   </View>
                   <TextInput
-                    style={[styles.modalInput, { marginBottom: 8 }]}
+                    style={[styles.modalInput, { marginBottom: 8 }, Platform.OS === 'android' && getAndroidInputStyle()]}
                     placeholder="分类名称"
                     value={editCategoryName}
                     onChangeText={setEditCategoryName}
@@ -4240,11 +4241,17 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     fontSize: FontSizes.lg,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 12,
+    paddingBottom: Platform.OS === 'android' ? 12 : 12,
     paddingHorizontal: 16,
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     color: '#000000',
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   datePickerButton: {
     flexDirection: 'row',
@@ -4900,7 +4907,7 @@ const styles = StyleSheet.create({
   },
   intervalInput: {
     width: 60,
-    height: 44,
+    height: Platform.OS === 'android' ? 48 : 44,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
@@ -4909,6 +4916,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#000000',
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+      paddingVertical: 0,
+    }),
   },
   // 目标值输入
   targetValueContainer: {
@@ -4927,7 +4939,7 @@ const styles = StyleSheet.create({
   },
   targetValueInput: {
     width: 80,
-    height: 44,
+    height: Platform.OS === 'android' ? 48 : 44,
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
     borderWidth: 1,
@@ -4936,6 +4948,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#000000',
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+      paddingVertical: 0,
+    }),
   },
   targetValueUnit: {
     fontSize: 14,
@@ -5050,6 +5067,10 @@ const styles = StyleSheet.create({
   noteInput: {
     height: 80,
     textAlignVertical: 'top',
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      paddingVertical: 14,
+    }),
   },
   // 打卡备注弹窗
   checkinNoteModalContent: {
@@ -5073,13 +5094,16 @@ const styles = StyleSheet.create({
   },
   checkinNoteInput: {
     fontSize: 16,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'android' ? 14 : 12,
     paddingHorizontal: 16,
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     color: '#000000',
     height: 100,
     textAlignVertical: 'top',
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+    }),
   },
   checkinNoteHint: {
     fontSize: 12,

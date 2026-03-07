@@ -588,6 +588,10 @@ const styles = StyleSheet.create({
     color: Colors.text,
     backgroundColor: Colors.gray[50],
     textAlignVertical: 'top',
+    lineHeight: Platform.OS === 'android' ? scaleFont(20) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+    }),
   },
   modalButtons: {
     flexDirection: 'row',

@@ -9,6 +9,7 @@ import {
   Modal,
   TextInput,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -568,13 +569,24 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: Platform.OS === 'android' ? 12 : 14,
     fontSize: FontSizes.lg,
     color: '#000000',
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      paddingTop: 12,
+      paddingBottom: 12,
+    }),
   },
   ratingContainer: {
     flexDirection: 'row',

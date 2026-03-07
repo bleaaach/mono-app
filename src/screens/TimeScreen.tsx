@@ -2271,11 +2271,17 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     fontSize: FontSizes.lg,
-    paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 12 : 12,
+    paddingBottom: Platform.OS === 'android' ? 12 : 12,
     paddingHorizontal: 16,
     backgroundColor: Colors.gray[50],
     borderRadius: 12,
     color: Colors.text,
+    lineHeight: Platform.OS === 'android' ? scaleFont(24) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   iconGrid: {
     flexDirection: 'row',

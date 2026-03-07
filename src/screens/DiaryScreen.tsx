@@ -28,6 +28,7 @@ import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import AnimatedLib, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { DiaryEntry, DiaryEditHistory, CustomMood, MoodAnalysis } from '../types';
 import { Colors } from '../constants/colors';
+import { getAndroidInputStyle, getAndroidMultilineInputStyle } from '../utils/platformStyles';
 import { diaryStorage } from '../utils/storage';
 import { diaryEvents, DIARY_EVENTS, setPendingEditEntry, getPendingEditEntry } from '../utils/events';
 import { getTodayString, formatDate, generateId } from '../utils/date';
@@ -1712,7 +1713,7 @@ export default function DiaryScreen() {
           {activeTab === 'timeline' && (
             <>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, Platform.OS === 'android' && getAndroidInputStyle()]}
                 placeholder="搜索日记..."
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -1777,7 +1778,7 @@ export default function DiaryScreen() {
 
               <ScrollView style={styles.modalBody}>
                 <TextInput
-                  style={[styles.modalInput, isMarkdown && styles.markdownInput]}
+                  style={[styles.modalInput, Platform.OS === 'android' && getAndroidMultilineInputStyle(), isMarkdown && styles.markdownInput]}
                   placeholder="今天发生了什么值得记录的事..."
                   value={editorContent}
                   onChangeText={setEditorContent}
@@ -2005,7 +2006,7 @@ export default function DiaryScreen() {
                 {showTagInput && (
                   <View style={styles.customTagInput}>
                     <TextInput
-                      style={styles.tagInputField}
+                      style={[styles.tagInputField, Platform.OS === 'android' && getAndroidInputStyle()]}
                       placeholder="输入新标签..."
                       value={newTagInput}
                       onChangeText={setNewTagInput}
@@ -2260,13 +2261,13 @@ export default function DiaryScreen() {
               <View style={styles.addCustomMoodForm}>
                 <Text style={styles.addCustomMoodTitle}>添加新心情</Text>
                 <TextInput
-                  style={styles.customMoodInput}
+                  style={[styles.customMoodInput, Platform.OS === 'android' && getAndroidInputStyle()]}
                   placeholder="心情名称"
                   onChangeText={() => {}}
                 />
                 <TextInput
-                  style={styles.customMoodInput}
-                  placeholder="图标名称 (如: happy, sunny, cloudy)"
+                  style={[styles.customMoodInput, Platform.OS === 'android' && getAndroidInputStyle()]}
+                  placeholder="图标名称 (如：happy, sunny, cloudy)"
                   onChangeText={() => {}}
                 />
                 <TouchableOpacity style={styles.addCustomMoodBtn}>
@@ -2320,11 +2321,17 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     width: isSmallDevice ? 80 : 100,
-    fontSize: FontSizes.sm,
+    fontSize: FontSizes.inputSmall,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5E5',
-    paddingVertical: 4,
+    paddingTop: Platform.OS === 'android' ? 10 : 4,
+    paddingBottom: Platform.OS === 'android' ? 10 : 4,
     color: '#000000',
+    lineHeight: Platform.OS === 'android' ? scaleFont(20) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   addBtn: {
     width: 36,
@@ -3077,10 +3084,17 @@ const styles = StyleSheet.create({
   },
   modalInput: {
     fontSize: FontSizes.lg,
-    lineHeight: scaleFont(26),
+    lineHeight: Platform.OS === 'android' ? scaleFont(28) : scaleFont(26),
     minHeight: 180,
     textAlignVertical: 'top',
     color: '#000000',
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      paddingTop: 12,
+      paddingBottom: 12,
+      paddingLeft: 8,
+      paddingRight: 8,
+    }),
   },
   moodSelector: {
     marginTop: 20,
@@ -3738,7 +3752,12 @@ const styles = StyleSheet.create({
     color: '#000',
     borderBottomWidth: 2,
     borderBottomColor: '#E5E5E5',
-    paddingVertical: 8,
+    paddingVertical: Platform.OS === 'android' ? 12 : 8,
+    lineHeight: Platform.OS === 'android' ? scaleFont(32) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   monthSelector: {
     flexDirection: 'row',

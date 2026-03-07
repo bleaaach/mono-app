@@ -10,6 +10,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -509,7 +510,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: '#000',
-    paddingVertical: 8,
+    paddingVertical: Platform.OS === 'android' ? 10 : 8,
+    lineHeight: Platform.OS === 'android' ? scaleFont(22) : undefined,
+    ...(Platform.OS === 'android' && {
+      includeFontPadding: false,
+      textAlignVertical: 'center',
+    }),
   },
   // 活跃筛选
   activeFilters: {
