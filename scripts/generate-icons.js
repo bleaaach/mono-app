@@ -4,44 +4,69 @@ const path = require('path');
 
 const assetsDir = path.join(__dirname, '..', 'assets');
 
-// SVG 文件内容
+// 新的极简图标设计 - 四个圆角矩形模块，右下留白
 const iconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" fill="#FFFFFF"/>
-  <g transform="translate(262, 312)">
-    <rect x="0" y="100" width="100" height="300" rx="4" fill="#000000"/>
-    <rect x="0" y="0" width="100" height="220" rx="4" fill="#000000" transform="rotate(18, 50, 200)"/>
-    <rect x="400" y="0" width="100" height="220" rx="4" fill="#000000" transform="rotate(-18, 450, 200)"/>
-    <rect x="400" y="100" width="100" height="300" rx="4" fill="#000000"/>
-  </g>
+  <!-- 圆角背景 -->
+  <rect width="1024" height="1024" rx="230" fill="#FFFFFF"/>
+  
+  <!-- 左上模块 -->
+  <rect x="212" y="212" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 右上模块 -->
+  <rect x="532" y="212" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 左下模块 -->
+  <rect x="212" y="532" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 右下镂空（留白/背景色），代表"极简=留白" -->
 </svg>`;
 
+// Android 自适应图标版本（无背景，只保留图形）
 const adaptiveIconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <g transform="translate(168, 168)">
-    <rect x="0" y="144" width="120" height="400" rx="6" fill="#000000"/>
-    <rect x="0" y="0" width="120" height="280" rx="6" fill="#000000" transform="rotate(20, 60, 280)"/>
-    <rect x="568" y="0" width="120" height="280" rx="6" fill="#000000" transform="rotate(-20, 628, 280)"/>
-    <rect x="568" y="144" width="120" height="400" rx="6" fill="#000000"/>
-  </g>
+  <!-- 左上模块 -->
+  <rect x="212" y="212" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 右上模块 -->
+  <rect x="532" y="212" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 左下模块 -->
+  <rect x="212" y="532" width="280" height="280" rx="40" fill="#1A1A1A"/>
+  
+  <!-- 右下镂空（留白/背景色），代表"极简=留白" -->
 </svg>`;
 
+// 启动屏图标（稍小一点，居中显示）
 const splashIconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1024" height="1024" fill="#FFFFFF"/>
-  <g transform="translate(287, 362)">
-    <rect x="0" y="75" width="90" height="225" rx="4" fill="#000000"/>
-    <rect x="0" y="0" width="90" height="165" rx="4" fill="#000000" transform="rotate(18, 45, 150)"/>
-    <rect x="360" y="0" width="90" height="165" rx="4" fill="#000000" transform="rotate(-18, 405, 150)"/>
-    <rect x="360" y="75" width="90" height="225" rx="4" fill="#000000"/>
-  </g>
+  <!-- 圆角背景 -->
+  <rect width="1024" height="1024" rx="230" fill="#FFFFFF"/>
+  
+  <!-- 左上模块 -->
+  <rect x="262" y="262" width="220" height="220" rx="32" fill="#1A1A1A"/>
+  
+  <!-- 右上模块 -->
+  <rect x="542" y="262" width="220" height="220" rx="32" fill="#1A1A1A"/>
+  
+  <!-- 左下模块 -->
+  <rect x="262" y="542" width="220" height="220" rx="32" fill="#1A1A1A"/>
+  
+  <!-- 右下镂空（留白/背景色），代表"极简=留白" -->
 </svg>`;
 
+// Favicon 版本（小尺寸简化版）
 const faviconSvg = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="48" height="48" fill="#FFFFFF"/>
-  <g transform="translate(12, 14)">
-    <rect x="0" y="4" width="5" height="16" rx="1" fill="#000000"/>
-    <rect x="0" y="0" width="5" height="12" rx="1" fill="#000000" transform="rotate(18, 2.5, 10)"/>
-    <rect x="19" y="0" width="5" height="12" rx="1" fill="#000000" transform="rotate(-18, 21.5, 10)"/>
-    <rect x="19" y="4" width="5" height="16" rx="1" fill="#000000"/>
-  </g>
+  <!-- 圆角背景 -->
+  <rect width="48" height="48" rx="10" fill="#FFFFFF"/>
+  
+  <!-- 左上模块 -->
+  <rect x="10" y="10" width="13" height="13" rx="2" fill="#1A1A1A"/>
+  
+  <!-- 右上模块 -->
+  <rect x="25" y="10" width="13" height="13" rx="2" fill="#1A1A1A"/>
+  
+  <!-- 左下模块 -->
+  <rect x="10" y="25" width="13" height="13" rx="2" fill="#1A1A1A"/>
+  
+  <!-- 右下镂空（留白/背景色），代表"极简=留白" -->
 </svg>`;
 
 async function generateIcons() {
@@ -64,7 +89,7 @@ async function generateIcons() {
       .toFile(path.join(assetsDir, 'splash-icon.png'));
     console.log('✓ Generated splash-icon.png (1024x1024)');
 
-    // Generate favicon.png (48x48 and 32x32)
+    // Generate favicon.png (48x48)
     await sharp(Buffer.from(faviconSvg))
       .resize(48, 48)
       .png()
