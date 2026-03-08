@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const assetsDir = path.join(__dirname, '..', 'assets');
+const androidResDir = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'res');
 
 // 新的极简图标设计 - 四个圆角矩形模块，右下留白
 const iconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -69,6 +70,15 @@ const faviconSvg = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" 
   <!-- 右下镂空（留白/背景色），代表"极简=留白" -->
 </svg>`;
 
+// Android 图标尺寸配置
+const androidIconSizes = {
+  'mipmap-mdpi': 48,
+  'mipmap-hdpi': 72,
+  'mipmap-xhdpi': 96,
+  'mipmap-xxhdpi': 144,
+  'mipmap-xxxhdpi': 192,
+};
+
 async function generateIcons() {
   try {
     // Generate icon.png (1024x1024)
@@ -95,6 +105,54 @@ async function generateIcons() {
       .png()
       .toFile(path.join(assetsDir, 'favicon.png'));
     console.log('✓ Generated favicon.png (48x48)');
+
+    // Generate Android mipmap icons
+    console.log('\n📱 Generating Android mipmap icons...');
+    
+    for (const [folder, size] of Object.entries(androidIconSizes)) {
+      const folderPath = path.join(androidResDir, folder);
+      
+      // 确保目录存在
+      if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+      }
+
+      // 生成 ic_launcher.webp (使用带背景的图标)
+      await sharp(Buffer.from(iconSvg))
+        .resize(size, size)
+        .webp({ quality: 90 })
+        .toFile(path.join(folderPath, 'ic_launcher.webp'));
+
+      // 生成 ic_launcher_round.webp (圆形图标，使用相同图标)
+      await sharp(Buffer.from(iconSvg))
+        .resize(size, size)
+        .webp({ quality: 90 })
+        .toFile(path.join(folderPath, 'ic_launcher_round.webp'));
+
+      // 生成 ic_launcher_foreground.webp (自适应图标前景)
+      await sharp(Buffer.from(adaptiveIconSvg))
+        .resize(size, size)
+        .webp({ quality: 90 })
+        .toFile(path.join(folderPath, 'ic_launcher_foreground.webp'));
+
+      console.log(`  ✓ Generated ${folder} icons (${size}x${size})`);
+    }
+
+    // 生成 mipmap-anydpi-v26 的 XML 文件
+    const anydpiDir = path.join(androidResDir, 'mipmap-anydpi-v26');
+    if (!fs.existsSync(anydpiDir)) {
+      fs.mkdirSync(anydpiDir, { recursive: true });
+    }
+
+    const icLauncherXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>`;
+
+    fs.writeFileSync(path.join(anydpiDir, 'ic_launcher.xml'), icLauncherXml);
+    fs.writeFileSync(path.join(anydpiDir, 'ic_launcher_round.xml'), icLauncherXml);
+    console.log('  ✓ Generated mipmap-anydpi-v26 XML files');
 
     console.log('\n✅ All icons generated successfully!');
   } catch (error) {

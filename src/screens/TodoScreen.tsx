@@ -10,7 +10,7 @@ import {
   Modal,
   ScrollView,
   RefreshControl,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +20,7 @@ import Animated, {
   useSharedValue, 
   useAnimatedStyle, 
   withSpring,
+  withTiming,
   runOnJS,
 } from 'react-native-reanimated';
 import { Todo } from '../types';
@@ -48,6 +49,30 @@ export default function TodoScreen() {
   
   const translateX = useSharedValue(0);
   const startX = useSharedValue(0);
+  const modalTranslateY = useSharedValue(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow';
+    const hideEvent = Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide';
+    
+    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+      modalTranslateY.value = withTiming(-e.endCoordinates.height, { duration: 200 });
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      modalTranslateY.value = withTiming(0, { duration: 200 });
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  const modalAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: modalTranslateY.value }],
+    };
+  });
 
   const loadTodos = useCallback(async () => {
     const data = await todoStorage.get();
@@ -258,38 +283,33 @@ export default function TodoScreen() {
         animationType="slide"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>新建任务</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="输入任务内容..."
-                value={newTodoTitle}
-                onChangeText={setNewTodoTitle}
-                autoFocus
-                onSubmitEditing={addTodo}
-              />
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalButtonCancel}
-                  onPress={() => setShowAddModal(false)}
-                >
-                  <Text style={styles.modalButtonCancelText}>取消</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalButtonConfirm}
-                  onPress={addTodo}
-                >
-                  <Text style={styles.modalButtonConfirmText}>添加</Text>
-                </TouchableOpacity>
-              </View>
+        <View style={styles.modalOverlay}>
+          <Animated.View style={[styles.modalContent, modalAnimatedStyle]}>
+            <Text style={styles.modalTitle}>新建任务</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="输入任务内容..."
+              value={newTodoTitle}
+              onChangeText={setNewTodoTitle}
+              autoFocus
+              onSubmitEditing={addTodo}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => setShowAddModal(false)}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalButtonConfirm}
+                onPress={addTodo}
+              >
+                <Text style={styles.modalButtonConfirmText}>添加</Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        </KeyboardAvoidingView>
+          </Animated.View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
