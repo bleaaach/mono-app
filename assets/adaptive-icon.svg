@@ -1,0 +1,16 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 透明背景（Android自适应图标使用透明背景） -->
+  
+  <!-- MONO 标志 - 极简几何 M 字母 -->
+  <!-- 图标内容在 688x688 的安全区域内，居中于 1024x1024 画布 -->
+  <g transform="translate(168, 168)">
+    <!-- 左立柱 -->
+    <rect x="0" y="144" width="120" height="400" rx="6" fill="#000000"/>
+    <!-- 左上斜 -->
+    <rect x="0" y="0" width="120" height="280" rx="6" fill="#000000" transform="rotate(20, 60, 280)"/>
+    <!-- 右上斜 -->
+    <rect x="568" y="0" width="120" height="280" rx="6" fill="#000000" transform="rotate(-20, 628, 280)"/>
+    <!-- 右立柱 -->
+    <rect x="568" y="144" width="120" height="400" rx="6" fill="#000000"/>
+  </g>
+</svg>

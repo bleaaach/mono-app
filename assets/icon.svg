@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 白色背景 -->
+  <rect width="1024" height="1024" fill="#FFFFFF"/>
+  
+  <!-- MONO 标志 - 极简几何 M 字母 -->
+  <!-- 使用四个矩形块构建现代感的 M -->
+  <g transform="translate(262, 312)">
+    <!-- 左立柱 -->
+    <rect x="0" y="100" width="100" height="300" rx="4" fill="#000000"/>
+    <!-- 左上斜 -->
+    <rect x="0" y="0" width="100" height="220" rx="4" fill="#000000" transform="rotate(18, 50, 200)"/>
+    <!-- 右上斜 -->
+    <rect x="400" y="0" width="100" height="220" rx="4" fill="#000000" transform="rotate(-18, 450, 200)"/>
+    <!-- 右立柱 -->
+    <rect x="400" y="100" width="100" height="300" rx="4" fill="#000000"/>
+  </g>
+</svg>

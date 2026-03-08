@@ -1,0 +1,16 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 白色背景 -->
+  <rect width="48" height="48" fill="#FFFFFF"/>
+  
+  <!-- MONO 标志 - 极简几何 M 字母（小尺寸版本） -->
+  <g transform="translate(12, 14)">
+    <!-- 左立柱 -->
+    <rect x="0" y="4" width="5" height="16" rx="1" fill="#000000"/>
+    <!-- 左上斜 -->
+    <rect x="0" y="0" width="5" height="12" rx="1" fill="#000000" transform="rotate(18, 2.5, 10)"/>
+    <!-- 右上斜 -->
+    <rect x="19" y="0" width="5" height="12" rx="1" fill="#000000" transform="rotate(-18, 21.5, 10)"/>
+    <!-- 右立柱 -->
+    <rect x="19" y="4" width="5" height="16" rx="1" fill="#000000"/>
+  </g>
+</svg>
