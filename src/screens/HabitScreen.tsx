@@ -12,6 +12,7 @@ import {
   Alert,
   Animated,
   RefreshControl,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -2320,216 +2321,221 @@ export default function HabitScreen() {
         animationType="slide"
         onRequestClose={() => setShowModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <ScrollView style={styles.modalScroll}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                {editingHabit ? '编辑习惯' : '新建习惯'}
-              </Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <ScrollView style={styles.modalScroll}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>
+                  {editingHabit ? '编辑习惯' : '新建习惯'}
+                </Text>
 
-              {/* 名称输入 */}
-              <Text style={styles.modalLabel}>习惯名称</Text>
-              <TextInput
-                style={[styles.modalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
-                placeholder="例如：每天阅读 30 分钟..."
-                value={habitName}
-                onChangeText={setHabitName}
-                autoFocus
-              />
+                {/* 名称输入 */}
+                <Text style={styles.modalLabel}>习惯名称</Text>
+                <TextInput
+                  style={[styles.modalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
+                  placeholder="例如：每天阅读 30 分钟..."
+                  value={habitName}
+                  onChangeText={setHabitName}
+                  autoFocus
+                />
 
-              {/* 图标选择 */}
-              <Text style={styles.modalLabel}>图标</Text>
-              <View style={styles.iconGrid}>
-                {HABIT_ICONS.map(iconItem => (
-                  <TouchableOpacity
-                    key={iconItem.name}
-                    style={[styles.iconOption, habitIcon === iconItem.name && styles.iconOptionActive]}
-                    onPress={() => setHabitIcon(iconItem.name)}
-                  >
-                    <iconItem.component size={20} color={habitIcon === iconItem.name ? '#FFFFFF' : '#000000'} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* 分类选择 */}
-              <View style={styles.categoryHeader}>
-                <Text style={styles.modalLabel}>分类</Text>
-                <TouchableOpacity onPress={() => setShowCategoryModal(true)}>
-                  <Text style={styles.categoryManageText}>管理分类</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.categoryGrid}>
-                {getAllCategories().map(cat => {
-                  const IconComp = cat.isCustom
-                    ? OtherIcon
-                    : (HABIT_CATEGORIES.find(c => c.id === cat.id)?.iconComponent || OtherIcon);
-                  return (
+                {/* 图标选择 */}
+                <Text style={styles.modalLabel}>图标</Text>
+                <View style={styles.iconGrid}>
+                  {HABIT_ICONS.map(iconItem => (
                     <TouchableOpacity
-                      key={cat.id}
-                      style={[styles.categoryOption, habitCategory === cat.id && styles.categoryOptionActive]}
-                      onPress={() => setHabitCategory(cat.id)}
+                      key={iconItem.name}
+                      style={[styles.iconOption, habitIcon === iconItem.name && styles.iconOptionActive]}
+                      onPress={() => setHabitIcon(iconItem.name)}
                     >
-                      <View style={[styles.categoryOptionIcon, cat.isCustom && { backgroundColor: cat.color + '20' }]}>
-                        {cat.isCustom ? (
-                          <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
-                        ) : (
-                          <IconComp size={14} color={habitCategory === cat.id ? '#FFFFFF' : cat.color} />
-                        )}
-                      </View>
-                      <Text style={[styles.categoryOptionText, habitCategory === cat.id && styles.categoryOptionTextActive]}>
-                        {cat.name}
+                      <iconItem.component size={20} color={habitIcon === iconItem.name ? '#FFFFFF' : '#000000'} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* 分类选择 */}
+                <View style={styles.categoryHeader}>
+                  <Text style={styles.modalLabel}>分类</Text>
+                  <TouchableOpacity onPress={() => setShowCategoryModal(true)}>
+                    <Text style={styles.categoryManageText}>管理分类</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.categoryGrid}>
+                  {getAllCategories().map(cat => {
+                    const IconComp = cat.isCustom
+                      ? OtherIcon
+                      : (HABIT_CATEGORIES.find(c => c.id === cat.id)?.iconComponent || OtherIcon);
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.categoryOption, habitCategory === cat.id && styles.categoryOptionActive]}
+                        onPress={() => setHabitCategory(cat.id)}
+                      >
+                        <View style={[styles.categoryOptionIcon, cat.isCustom && { backgroundColor: cat.color + '20' }]}>
+                          {cat.isCustom ? (
+                            <View style={[styles.customCategoryDot, { backgroundColor: cat.color }]} />
+                          ) : (
+                            <IconComp size={14} color={habitCategory === cat.id ? '#FFFFFF' : cat.color} />
+                          )}
+                        </View>
+                        <Text style={[styles.categoryOptionText, habitCategory === cat.id && styles.categoryOptionTextActive]}>
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* 频率选择 */}
+                <Text style={styles.modalLabel}>频率</Text>
+                <View style={styles.frequencyButtons}>
+                  {[
+                    { key: 'daily', label: '每天' },
+                    { key: 'weekly', label: '每周' },
+                    { key: 'monthly', label: '每月' },
+                    { key: 'custom', label: '自定义' },
+                  ].map(freq => (
+                    <TouchableOpacity
+                      key={freq.key}
+                      style={[styles.freqButton, habitFrequency === freq.key && styles.freqButtonActive]}
+                      onPress={() => setHabitFrequency(freq.key as FrequencyType)}
+                    >
+                      <Text style={[styles.freqButtonText, habitFrequency === freq.key && styles.freqButtonTextActive]}>
+                        {freq.label}
                       </Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+                  ))}
+                </View>
 
-              {/* 频率选择 */}
-              <Text style={styles.modalLabel}>频率</Text>
-              <View style={styles.frequencyButtons}>
-                {[
-                  { key: 'daily', label: '每天' },
-                  { key: 'weekly', label: '每周' },
-                  { key: 'monthly', label: '每月' },
-                  { key: 'custom', label: '自定义' },
-                ].map(freq => (
-                  <TouchableOpacity
-                    key={freq.key}
-                    style={[styles.freqButton, habitFrequency === freq.key && styles.freqButtonActive]}
-                    onPress={() => setHabitFrequency(freq.key as FrequencyType)}
-                  >
-                    <Text style={[styles.freqButtonText, habitFrequency === freq.key && styles.freqButtonTextActive]}>
-                      {freq.label}
+                {/* 自定义频率间隔输入 */}
+                {habitFrequency === 'custom' && (
+                  <View style={styles.intervalInputContainer}>
+                    <Text style={styles.intervalLabel}>每</Text>
+                    <TextInput
+                      style={[styles.intervalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
+                      value={String(habitFrequencyInterval)}
+                      onChangeText={(text) => {
+                        const num = parseInt(text) || 1;
+                        setHabitFrequencyInterval(Math.max(1, num));
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                    />
+                    <Text style={styles.intervalLabel}>天</Text>
+                  </View>
+                )}
+
+                {/* 目标选择 */}
+                <Text style={styles.modalLabel}>目标类型</Text>
+                <View style={styles.targetButtons}>
+                  {[
+                    { key: 'streak', label: '连续打卡' },
+                    { key: 'count', label: '累计次数' },
+                    { key: 'none', label: '无目标' },
+                  ].map(target => (
+                    <TouchableOpacity
+                      key={target.key}
+                      style={[styles.targetButton, habitTarget === target.key && styles.targetButtonActive]}
+                      onPress={() => setHabitTarget(target.key as typeof habitTarget)}
+                    >
+                      <Text style={[styles.targetButtonText, habitTarget === target.key && styles.targetButtonTextActive]}>
+                        {target.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* 目标值输入 */}
+                {habitTarget !== 'none' && (
+                  <View style={styles.targetValueContainer}>
+                    <Text style={styles.targetValueLabel}>
+                      {habitTarget === 'streak' ? '连续' : '累计'}目标
+                    </Text>
+                    <TextInput
+                      style={[styles.targetValueInput, Platform.OS === 'android' && getAndroidInputStyle()]}
+                      value={String(habitTargetValue)}
+                      onChangeText={(text) => {
+                        const num = parseInt(text) || 1;
+                        setHabitTargetValue(Math.max(1, num));
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                    <Text style={styles.targetValueUnit}>
+                      {habitTarget === 'streak' ? '天' : '次'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* 截止日期选择 */}
+                <Text style={styles.modalLabel}>截止日期（可选）</Text>
+                <TouchableOpacity
+                  style={styles.datePickerButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Text style={habitDeadline ? styles.datePickerText : styles.datePickerPlaceholder}>
+                    {habitDeadline ? formatDate(habitDeadline) : '选择日期'}
+                  </Text>
+                  {habitDeadline ? (
+                    <TouchableOpacity
+                      style={styles.clearDateButton}
+                      onPress={() => setHabitDeadline('')}
+                    >
+                      <CloseIcon size={16} color={Colors.gray[400]} />
+                    </TouchableOpacity>
+                  ) : null}
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={habitDeadline ? new Date(habitDeadline) : new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={new Date()}
+                    onChange={(event, selectedDate) => {
+                      setShowDatePicker(false);
+                      if (selectedDate) {
+                        const year = selectedDate.getFullYear();
+                        const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(selectedDate.getDate()).padStart(2, '0');
+                        setHabitDeadline(`${year}-${month}-${day}`);
+                      }
+                    }}
+                  />
+                )}
+
+                {/* 颜色选择 */}
+                <Text style={[styles.modalLabel, { marginTop: 16 }]}>颜色标记</Text>
+                <View style={styles.colorGrid}>
+                  {HABIT_COLORS.map(color => (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        { backgroundColor: color },
+                        habitColor === color && styles.colorOptionActive,
+                      ]}
+                      onPress={() => setHabitColor(color)}
+                    />
+                  ))}
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setShowModal(false)}>
+                    <Text style={styles.modalButtonCancelText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveHabit}>
+                    <Text style={styles.modalButtonConfirmText}>
+                      {editingHabit ? '保存' : '创建'}
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* 自定义频率间隔输入 */}
-              {habitFrequency === 'custom' && (
-                <View style={styles.intervalInputContainer}>
-                  <Text style={styles.intervalLabel}>每</Text>
-                  <TextInput
-                    style={[styles.intervalInput, Platform.OS === 'android' && getAndroidInputStyle()]}
-                    value={String(habitFrequencyInterval)}
-                    onChangeText={(text) => {
-                      const num = parseInt(text) || 1;
-                      setHabitFrequencyInterval(Math.max(1, num));
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                  />
-                  <Text style={styles.intervalLabel}>天</Text>
                 </View>
-              )}
-
-              {/* 目标选择 */}
-              <Text style={styles.modalLabel}>目标类型</Text>
-              <View style={styles.targetButtons}>
-                {[
-                  { key: 'streak', label: '连续打卡' },
-                  { key: 'count', label: '累计次数' },
-                  { key: 'none', label: '无目标' },
-                ].map(target => (
-                  <TouchableOpacity
-                    key={target.key}
-                    style={[styles.targetButton, habitTarget === target.key && styles.targetButtonActive]}
-                    onPress={() => setHabitTarget(target.key as typeof habitTarget)}
-                  >
-                    <Text style={[styles.targetButtonText, habitTarget === target.key && styles.targetButtonTextActive]}>
-                      {target.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
               </View>
-
-              {/* 目标值输入 */}
-              {habitTarget !== 'none' && (
-                <View style={styles.targetValueContainer}>
-                  <Text style={styles.targetValueLabel}>
-                    {habitTarget === 'streak' ? '连续' : '累计'}目标
-                  </Text>
-                  <TextInput
-                    style={[styles.targetValueInput, Platform.OS === 'android' && getAndroidInputStyle()]}
-                    value={String(habitTargetValue)}
-                    onChangeText={(text) => {
-                      const num = parseInt(text) || 1;
-                      setHabitTargetValue(Math.max(1, num));
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                  />
-                  <Text style={styles.targetValueUnit}>
-                    {habitTarget === 'streak' ? '天' : '次'}
-                  </Text>
-                </View>
-              )}
-
-              {/* 截止日期选择 */}
-              <Text style={styles.modalLabel}>截止日期（可选）</Text>
-              <TouchableOpacity
-                style={styles.datePickerButton}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Text style={habitDeadline ? styles.datePickerText : styles.datePickerPlaceholder}>
-                  {habitDeadline ? formatDate(habitDeadline) : '选择日期'}
-                </Text>
-                {habitDeadline ? (
-                  <TouchableOpacity
-                    style={styles.clearDateButton}
-                    onPress={() => setHabitDeadline('')}
-                  >
-                    <CloseIcon size={16} color={Colors.gray[400]} />
-                  </TouchableOpacity>
-                ) : null}
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={habitDeadline ? new Date(habitDeadline) : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  minimumDate={new Date()}
-                  onChange={(event, selectedDate) => {
-                    setShowDatePicker(false);
-                    if (selectedDate) {
-                      const year = selectedDate.getFullYear();
-                      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                      const day = String(selectedDate.getDate()).padStart(2, '0');
-                      setHabitDeadline(`${year}-${month}-${day}`);
-                    }
-                  }}
-                />
-              )}
-
-              {/* 颜色选择 */}
-              <Text style={[styles.modalLabel, { marginTop: 16 }]}>颜色标记</Text>
-              <View style={styles.colorGrid}>
-                {HABIT_COLORS.map(color => (
-                  <TouchableOpacity
-                    key={color}
-                    style={[
-                      styles.colorOption,
-                      { backgroundColor: color },
-                      habitColor === color && styles.colorOptionActive,
-                    ]}
-                    onPress={() => setHabitColor(color)}
-                  />
-                ))}
-              </View>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setShowModal(false)}>
-                  <Text style={styles.modalButtonCancelText}>取消</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveHabit}>
-                  <Text style={styles.modalButtonConfirmText}>
-                    {editingHabit ? '保存' : '创建'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 补卡弹窗 */}
@@ -2539,57 +2545,62 @@ export default function HabitScreen() {
         animationType="slide"
         onRequestClose={() => setShowMakeupModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.makeupModalContent}>
-            <Text style={styles.modalTitle}>补卡</Text>
-            <Text style={styles.makeupSubtitle}>为「{selectedHabit?.name}」补打过去的记录</Text>
-            
-            <Text style={styles.modalLabel}>选择日期（7天内）</Text>
-            <TouchableOpacity
-              style={styles.datePickerButton}
-              onPress={() => setShowMakeupDatePicker(true)}
-            >
-              <Text style={makeupDate ? styles.datePickerText : styles.datePickerPlaceholder}>
-                {makeupDate ? formatDate(makeupDate) : '选择日期'}
-              </Text>
-            </TouchableOpacity>
-            {showMakeupDatePicker && (
-              <DateTimePicker
-                value={makeupDate ? new Date(makeupDate) : new Date()}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                onChange={(event, selectedDate) => {
-                  setShowMakeupDatePicker(false);
-                  if (selectedDate) {
-                    const year = selectedDate.getFullYear();
-                    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(selectedDate.getDate()).padStart(2, '0');
-                    setMakeupDate(`${year}-${month}-${day}`);
-                  }
-                }}
-              />
-            )}
-            
-            <Text style={[styles.modalLabel, { marginTop: 16 }]}>备注（可选）</Text>
-            <TextInput
-              style={[styles.modalInput, styles.noteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
-              placeholder="添加备注..."
-              value={makeupNote}
-              onChangeText={setMakeupNote}
-              multiline
-            />
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.makeupModalContent}>
+              <Text style={styles.modalTitle}>补卡</Text>
+              <Text style={styles.makeupSubtitle}>为「{selectedHabit?.name}」补打过去的记录</Text>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setShowMakeupModal(false)}>
-                <Text style={styles.modalButtonCancelText}>取消</Text>
+              <Text style={styles.modalLabel}>选择日期（7天内）</Text>
+              <TouchableOpacity
+                style={styles.datePickerButton}
+                onPress={() => setShowMakeupDatePicker(true)}
+              >
+                <Text style={makeupDate ? styles.datePickerText : styles.datePickerPlaceholder}>
+                  {makeupDate ? formatDate(makeupDate) : '选择日期'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveMakeup}>
-                <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
-              </TouchableOpacity>
+              {showMakeupDatePicker && (
+                <DateTimePicker
+                  value={makeupDate ? new Date(makeupDate) : new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  maximumDate={new Date()}
+                  onChange={(event, selectedDate) => {
+                    setShowMakeupDatePicker(false);
+                    if (selectedDate) {
+                      const year = selectedDate.getFullYear();
+                      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                      const day = String(selectedDate.getDate()).padStart(2, '0');
+                      setMakeupDate(`${year}-${month}-${day}`);
+                    }
+                  }}
+                />
+              )}
+
+              <Text style={[styles.modalLabel, { marginTop: 16 }]}>备注（可选）</Text>
+              <TextInput
+                style={[styles.modalInput, styles.noteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
+                placeholder="添加备注..."
+                value={makeupNote}
+                onChangeText={setMakeupNote}
+                multiline
+              />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.modalButtonCancel} onPress={() => setShowMakeupModal(false)}>
+                  <Text style={styles.modalButtonCancelText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalButtonConfirm} onPress={saveMakeup}>
+                  <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 打卡备注弹窗 */}
@@ -2599,50 +2610,55 @@ export default function HabitScreen() {
         animationType="fade"
         onRequestClose={() => setShowCheckinNoteModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.checkinNoteModalContent}>
-            <View style={styles.checkinNoteHeader}>
-              <Text style={styles.modalTitle}>打卡备注</Text>
-              <TouchableOpacity onPress={() => setShowCheckinNoteModal(false)}>
-                <CloseIcon size={24} color={Colors.gray[500]} />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.checkinNoteSubtitle}>
-              为「{checkinNoteHabit?.name}」添加备注（可选）
-            </Text>
-            
-            <TextInput
-              style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
-              placeholder="例如：今天感觉不错，完成了 5 公里跑步..."
-              value={checkinNoteText}
-              onChangeText={setCheckinNoteText}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-            />
-            <Text style={styles.checkinNoteHint}>{checkinNoteText.length}/200</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.checkinNoteModalContent}>
+              <View style={styles.checkinNoteHeader}>
+                <Text style={styles.modalTitle}>打卡备注</Text>
+                <TouchableOpacity onPress={() => setShowCheckinNoteModal(false)}>
+                  <CloseIcon size={24} color={Colors.gray[500]} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.modalButtonCancel} 
-                onPress={() => {
-                  // 跳过备注直接打卡
-                  saveCheckinWithNote();
-                }}
-              >
-                <Text style={styles.modalButtonCancelText}>跳过</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButtonConfirm, !checkinNoteText.trim() && styles.modalButtonDisabled]} 
-                onPress={saveCheckinWithNote}
-                disabled={!checkinNoteText.trim()}
-              >
-                <Text style={styles.modalButtonConfirmText}>保存备注</Text>
-              </TouchableOpacity>
+              <Text style={styles.checkinNoteSubtitle}>
+                为「{checkinNoteHabit?.name}」添加备注（可选）
+              </Text>
+
+              <TextInput
+                style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
+                placeholder="例如：今天感觉不错，完成了 5 公里跑步..."
+                value={checkinNoteText}
+                onChangeText={setCheckinNoteText}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+              <Text style={styles.checkinNoteHint}>{checkinNoteText.length}/200</Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalButtonCancel}
+                  onPress={() => {
+                    // 跳过备注直接打卡
+                    saveCheckinWithNote();
+                  }}
+                >
+                  <Text style={styles.modalButtonCancelText}>跳过</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButtonConfirm, !checkinNoteText.trim() && styles.modalButtonDisabled]}
+                  onPress={saveCheckinWithNote}
+                  disabled={!checkinNoteText.trim()}
+                >
+                  <Text style={styles.modalButtonConfirmText}>保存备注</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 删除打卡记录确认弹窗 */}
@@ -2693,49 +2709,54 @@ export default function HabitScreen() {
         animationType="fade"
         onRequestClose={() => setShowMakeupNoteModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.checkinNoteModalContent}>
-            <View style={styles.checkinNoteHeader}>
-              <Text style={styles.modalTitle}>补卡备注</Text>
-              <TouchableOpacity onPress={() => setShowMakeupNoteModal(false)}>
-                <CloseIcon size={24} color={Colors.gray[500]} />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.checkinNoteSubtitle}>
-              为「{makeupNoteHabit?.name}」补打 {makeupNoteDate ? formatDate(makeupNoteDate) : ''} 的记录
-            </Text>
-            
-            <TextInput
-              style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
-              placeholder="添加备注（可选）..."
-              value={makeupNoteText}
-              onChangeText={setMakeupNoteText}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-            />
-            <Text style={styles.checkinNoteHint}>{makeupNoteText.length}/200</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.checkinNoteModalContent}>
+              <View style={styles.checkinNoteHeader}>
+                <Text style={styles.modalTitle}>补卡备注</Text>
+                <TouchableOpacity onPress={() => setShowMakeupNoteModal(false)}>
+                  <CloseIcon size={24} color={Colors.gray[500]} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.modalButtonCancel} 
-                onPress={() => {
-                  // 跳过备注直接补卡
-                  saveMakeupWithNote();
-                }}
-              >
-                <Text style={styles.modalButtonCancelText}>跳过</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalButtonConfirm} 
-                onPress={saveMakeupWithNote}
-              >
-                <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
-              </TouchableOpacity>
+              <Text style={styles.checkinNoteSubtitle}>
+                为「{makeupNoteHabit?.name}」补打 {makeupNoteDate ? formatDate(makeupNoteDate) : ''} 的记录
+              </Text>
+
+              <TextInput
+                style={[styles.checkinNoteInput, Platform.OS === 'android' && getAndroidMultilineInputStyle()]}
+                placeholder="添加备注（可选）..."
+                value={makeupNoteText}
+                onChangeText={setMakeupNoteText}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+              <Text style={styles.checkinNoteHint}>{makeupNoteText.length}/200</Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalButtonCancel}
+                  onPress={() => {
+                    // 跳过备注直接补卡
+                    saveMakeupWithNote();
+                  }}
+                >
+                  <Text style={styles.modalButtonCancelText}>跳过</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalButtonConfirm}
+                  onPress={saveMakeupWithNote}
+                >
+                  <Text style={styles.modalButtonConfirmText}>确认补卡</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* 习惯详情弹窗 */}
@@ -3031,67 +3052,31 @@ export default function HabitScreen() {
           setEditingCategory(null);
         }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.categoryModalContent}>
-            <View style={styles.categoryModalHeader}>
-              <Text style={styles.modalTitle}>管理分类</Text>
-              <TouchableOpacity onPress={() => {
-                setShowCategoryModal(false);
-                setEditingCategory(null);
-              }}>
-                <CloseIcon size={24} color={Colors.gray[500]} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* 添加新分类 */}
-              <View style={styles.addCategorySection}>
-                <Text style={[styles.modalLabel, { marginBottom: 4 }]}>添加新分类</Text>
-                <TextInput
-                  style={[styles.modalInput, { marginBottom: 8 }, Platform.OS === 'android' && getAndroidInputStyle()]}
-                  placeholder="输入分类名称"
-                  value={newCategoryName}
-                  onChangeText={setNewCategoryName}
-                />
-                <Text style={[styles.modalLabel, { marginBottom: 8 }]}>选择颜色</Text>
-                <View style={styles.colorGrid}>
-                  {HABIT_COLORS.map(color => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[
-                        styles.colorOption,
-                        { backgroundColor: color },
-                        newCategoryColor === color && styles.colorOptionActive
-                      ]}
-                      onPress={() => setNewCategoryColor(color)}
-                    />
-                  ))}
-                </View>
-                <TouchableOpacity
-                  style={[styles.modalButtonConfirm, { marginTop: 8 }, !newCategoryName.trim() && styles.modalButtonDisabled]}
-                  onPress={handleAddCategory}
-                  disabled={!newCategoryName.trim()}
-                >
-                  <Text style={styles.modalButtonConfirmText}>添加分类</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.categoryModalContent}>
+              <View style={styles.categoryModalHeader}>
+                <Text style={styles.modalTitle}>管理分类</Text>
+                <TouchableOpacity onPress={() => {
+                  setShowCategoryModal(false);
+                  setEditingCategory(null);
+                }}>
+                  <CloseIcon size={24} color={Colors.gray[500]} />
                 </TouchableOpacity>
               </View>
 
-              {/* 编辑分类弹窗内嵌区域 */}
-              {editingCategory && (
-                <View style={styles.editCategorySection}>
-                  <View style={styles.editCategoryHeader}>
-                    <Text style={[styles.modalLabel, { marginBottom: 0 }]}>
-                      编辑{editingCategory.isCustom ? '自定义' : '默认'}分类
-                    </Text>
-                    <TouchableOpacity onPress={cancelEditCategory}>
-                      <CloseIcon size={20} color={Colors.gray[500]} />
-                    </TouchableOpacity>
-                  </View>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {/* 添加新分类 */}
+                <View style={styles.addCategorySection}>
+                  <Text style={[styles.modalLabel, { marginBottom: 4 }]}>添加新分类</Text>
                   <TextInput
                     style={[styles.modalInput, { marginBottom: 8 }, Platform.OS === 'android' && getAndroidInputStyle()]}
-                    placeholder="分类名称"
-                    value={editCategoryName}
-                    onChangeText={setEditCategoryName}
+                    placeholder="输入分类名称"
+                    value={newCategoryName}
+                    onChangeText={setNewCategoryName}
                   />
                   <Text style={[styles.modalLabel, { marginBottom: 8 }]}>选择颜色</Text>
                   <View style={styles.colorGrid}>
@@ -3101,111 +3086,152 @@ export default function HabitScreen() {
                         style={[
                           styles.colorOption,
                           { backgroundColor: color },
-                          editCategoryColor === color && styles.colorOptionActive
+                          newCategoryColor === color && styles.colorOptionActive
                         ]}
-                        onPress={() => setEditCategoryColor(color)}
+                        onPress={() => setNewCategoryColor(color)}
                       />
                     ))}
                   </View>
-                  <View style={[styles.editCategoryActions, { marginTop: 8 }]}>
-                    <TouchableOpacity
-                      style={[styles.modalButtonSecondary, { flex: 1 }]}
-                      onPress={cancelEditCategory}
-                    >
-                      <Text style={styles.modalButtonSecondaryText}>取消</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.modalButtonConfirm, { flex: 1 }, !editCategoryName.trim() && styles.modalButtonDisabled]}
-                      onPress={handleSaveCategoryEdit}
-                      disabled={!editCategoryName.trim()}
-                    >
-                      <Text style={styles.modalButtonConfirmText}>保存</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={[styles.modalButtonConfirm, { marginTop: 8 }, !newCategoryName.trim() && styles.modalButtonDisabled]}
+                    onPress={handleAddCategory}
+                    disabled={!newCategoryName.trim()}
+                  >
+                    <Text style={styles.modalButtonConfirmText}>添加分类</Text>
+                  </TouchableOpacity>
                 </View>
-              )}
 
-              {/* 默认分类列表 */}
-              <Text style={styles.modalLabel}>默认分类（点击编辑）</Text>
-              <View style={styles.customCategoryList}>
-                {HABIT_CATEGORIES.map(cat => {
-                  const override = defaultCategoryOverrides.find(o => o.id === cat.id);
-                  const displayName = override?.name ?? cat.name;
-                  const displayColor = override?.color ?? cat.color;
-                  const isModified = !!override;
-                  return (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={styles.customCategoryItem}
-                      onPress={() => startEditCategory({
-                        id: cat.id,
-                        name: displayName,
-                        color: displayColor,
-                        isCustom: false
-                      })}
-                    >
-                      <View style={styles.customCategoryInfo}>
-                        <View style={[styles.customCategoryColorDot, { backgroundColor: displayColor }]} />
-                        <View>
-                          <Text style={styles.customCategoryName}>{displayName}</Text>
-                          {isModified && (
-                            <Text style={styles.categoryModifiedHint}>已修改</Text>
-                          )}
-                        </View>
-                      </View>
-                      <View style={styles.categoryItemActions}>
-                        {isModified && (
-                          <TouchableOpacity
-                            style={styles.resetCategoryButton}
-                            onPress={() => handleResetDefaultCategory(cat.id)}
-                          >
-                            <Text style={styles.resetCategoryButtonText}>重置</Text>
-                          </TouchableOpacity>
-                        )}
-                        <Text style={styles.editCategoryHint}>编辑</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* 自定义分类列表 */}
-              <Text style={styles.modalLabel}>我的分类</Text>
-              {customCategories.length === 0 ? (
-                <Text style={styles.emptyCategoryText}>暂无自定义分类</Text>
-              ) : (
-                <View style={styles.customCategoryList}>
-                  {customCategories.map(cat => (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={styles.customCategoryItem}
-                      onPress={() => startEditCategory({
-                        id: cat.id,
-                        name: cat.name,
-                        color: cat.color,
-                        isCustom: true
-                      })}
-                    >
-                      <View style={styles.customCategoryInfo}>
-                        <View style={[styles.customCategoryColorDot, { backgroundColor: cat.color }]} />
-                        <Text style={styles.customCategoryName}>{cat.name}</Text>
-                      </View>
-                      <View style={styles.categoryItemActions}>
+                {/* 编辑分类弹窗内嵌区域 */}
+                {editingCategory && (
+                  <View style={styles.editCategorySection}>
+                    <View style={styles.editCategoryHeader}>
+                      <Text style={[styles.modalLabel, { marginBottom: 0 }]}>
+                        编辑{editingCategory.isCustom ? '自定义' : '默认'}分类
+                      </Text>
+                      <TouchableOpacity onPress={cancelEditCategory}>
+                        <CloseIcon size={20} color={Colors.gray[500]} />
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={[styles.modalInput, { marginBottom: 8 }, Platform.OS === 'android' && getAndroidInputStyle()]}
+                      placeholder="分类名称"
+                      value={editCategoryName}
+                      onChangeText={setEditCategoryName}
+                    />
+                    <Text style={[styles.modalLabel, { marginBottom: 8 }]}>选择颜色</Text>
+                    <View style={styles.colorGrid}>
+                      {HABIT_COLORS.map(color => (
                         <TouchableOpacity
-                          style={styles.deleteCategoryButton}
-                          onPress={() => handleDeleteCategory(cat.id)}
-                        >
-                          <Text style={styles.deleteCategoryButtonText}>删除</Text>
-                        </TouchableOpacity>
-                        <Text style={styles.editCategoryHint}>编辑</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
+                          key={color}
+                          style={[
+                            styles.colorOption,
+                            { backgroundColor: color },
+                            editCategoryColor === color && styles.colorOptionActive
+                          ]}
+                          onPress={() => setEditCategoryColor(color)}
+                        />
+                      ))}
+                    </View>
+                    <View style={[styles.editCategoryActions, { marginTop: 8 }]}>
+                      <TouchableOpacity
+                        style={[styles.modalButtonSecondary, { flex: 1 }]}
+                        onPress={cancelEditCategory}
+                      >
+                        <Text style={styles.modalButtonSecondaryText}>取消</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modalButtonConfirm, { flex: 1 }, !editCategoryName.trim() && styles.modalButtonDisabled]}
+                        onPress={handleSaveCategoryEdit}
+                        disabled={!editCategoryName.trim()}
+                      >
+                        <Text style={styles.modalButtonConfirmText}>保存</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* 默认分类列表 */}
+                <Text style={styles.modalLabel}>默认分类（点击编辑）</Text>
+                <View style={styles.customCategoryList}>
+                  {HABIT_CATEGORIES.map(cat => {
+                    const override = defaultCategoryOverrides.find(o => o.id === cat.id);
+                    const displayName = override?.name ?? cat.name;
+                    const displayColor = override?.color ?? cat.color;
+                    const isModified = !!override;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={styles.customCategoryItem}
+                        onPress={() => startEditCategory({
+                          id: cat.id,
+                          name: displayName,
+                          color: displayColor,
+                          isCustom: false
+                        })}
+                      >
+                        <View style={styles.customCategoryInfo}>
+                          <View style={[styles.customCategoryColorDot, { backgroundColor: displayColor }]} />
+                          <View>
+                            <Text style={styles.customCategoryName}>{displayName}</Text>
+                            {isModified && (
+                              <Text style={styles.categoryModifiedHint}>已修改</Text>
+                            )}
+                          </View>
+                        </View>
+                        <View style={styles.categoryItemActions}>
+                          {isModified && (
+                            <TouchableOpacity
+                              style={styles.resetCategoryButton}
+                              onPress={() => handleResetDefaultCategory(cat.id)}
+                            >
+                              <Text style={styles.resetCategoryButtonText}>重置</Text>
+                            </TouchableOpacity>
+                          )}
+                          <Text style={styles.editCategoryHint}>编辑</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              )}
-            </ScrollView>
+
+                {/* 自定义分类列表 */}
+                <Text style={styles.modalLabel}>我的分类</Text>
+                {customCategories.length === 0 ? (
+                  <Text style={styles.emptyCategoryText}>暂无自定义分类</Text>
+                ) : (
+                  <View style={styles.customCategoryList}>
+                    {customCategories.map(cat => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={styles.customCategoryItem}
+                        onPress={() => startEditCategory({
+                          id: cat.id,
+                          name: cat.name,
+                          color: cat.color,
+                          isCustom: true
+                        })}
+                      >
+                        <View style={styles.customCategoryInfo}>
+                          <View style={[styles.customCategoryColorDot, { backgroundColor: cat.color }]} />
+                          <Text style={styles.customCategoryName}>{cat.name}</Text>
+                        </View>
+                        <View style={styles.categoryItemActions}>
+                          <TouchableOpacity
+                            style={styles.deleteCategoryButton}
+                            onPress={() => handleDeleteCategory(cat.id)}
+                          >
+                            <Text style={styles.deleteCategoryButtonText}>删除</Text>
+                          </TouchableOpacity>
+                          <Text style={styles.editCategoryHint}>编辑</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );

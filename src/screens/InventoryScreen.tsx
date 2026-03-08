@@ -12,6 +12,7 @@ import {
   Image,
   Alert,
   RefreshControl,
+  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -1285,220 +1286,225 @@ export default function InventoryScreen() {
       animationType="slide"
       onRequestClose={() => { setShowAddModal(false); setEditingItem(null); resetForm(); }}
     >
-      <View style={styles.modalOverlay}>
-        <ScrollView style={styles.modalScroll}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingItem ? '编辑物品' : '添加物品'}</Text>
-            
-            {/* 图片选择 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>照片</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.imageList}>
-                  {formData.images?.map((uri, index) => (
-                    <View key={index} style={styles.selectedImage}>
-                      <Image source={{ uri }} style={styles.selectedImageThumb} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView style={styles.modalScroll}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>{editingItem ? '编辑物品' : '添加物品'}</Text>
+
+              {/* 图片选择 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>照片</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.imageList}>
+                    {formData.images?.map((uri, index) => (
+                      <View key={index} style={styles.selectedImage}>
+                        <Image source={{ uri }} style={styles.selectedImageThumb} />
+                        <TouchableOpacity
+                          style={styles.removeImageButton}
+                          onPress={() => {
+                            const newImages = formData.images?.filter((_, i) => i !== index);
+                            setFormData({ ...formData, images: newImages });
+                          }}
+                        >
+                          <Text style={styles.removeImageText}>×</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+                      <Text style={styles.addImageText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* 名称 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>名称 *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="物品名称"
+                  value={formData.name}
+                  onChangeText={text => setFormData({ ...formData, name: text })}
+                />
+              </View>
+
+              {/* 空间 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>空间 *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.optionList}>
+                    {spaces.map(space => (
                       <TouchableOpacity
-                        style={styles.removeImageButton}
-                        onPress={() => {
-                          const newImages = formData.images?.filter((_, i) => i !== index);
-                          setFormData({ ...formData, images: newImages });
-                        }}
+                        key={space.id}
+                        style={[
+                          styles.optionChip,
+                          formData.spaceId === space.id && styles.optionChipActive,
+                        ]}
+                        onPress={() => setFormData({ ...formData, spaceId: space.id })}
                       >
-                        <Text style={styles.removeImageText}>×</Text>
+                        <View style={styles.optionChipIcon}>
+                          {React.createElement(getSpaceIconComponent(space.icon || space.name), { size: 16, color: formData.spaceId === space.id ? '#FFFFFF' : '#000000' })}
+                        </View>
+                        <Text style={[
+                          styles.optionChipText,
+                          formData.spaceId === space.id && styles.optionChipTextActive,
+                        ]}>
+                          {space.name}
+                        </Text>
                       </TouchableOpacity>
-                    </View>
-                  ))}
-                  <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-                    <Text style={styles.addImageText}>+</Text>
-                  </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* 分类 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>分类 *</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.optionList}>
+                    {categories.map(category => (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[
+                          styles.optionChip,
+                          formData.categoryId === category.id && styles.optionChipActive,
+                        ]}
+                        onPress={() => setFormData({ ...formData, categoryId: category.id })}
+                      >
+                        <View style={styles.optionChipIcon}>
+                          {React.createElement(getCategoryIconComponent(category.icon), { size: 16, color: formData.categoryId === category.id ? '#FFFFFF' : '#000000' })}
+                        </View>
+                        <Text style={[
+                          styles.optionChipText,
+                          formData.categoryId === category.id && styles.optionChipTextActive,
+                        ]}>
+                          {category.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* 数量和单位 */}
+              <View style={styles.inputRow}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>数量</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="1"
+                    value={String(formData.quantity || 1)}
+                    onChangeText={text => setFormData({ ...formData, quantity: parseInt(text) || 1 })}
+                    keyboardType="number-pad"
+                  />
                 </View>
-              </ScrollView>
-            </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>单位</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="个"
+                    value={formData.unit}
+                    onChangeText={text => setFormData({ ...formData, unit: text })}
+                  />
+                </View>
+              </View>
 
-            {/* 名称 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>名称 *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="物品名称"
-                value={formData.name}
-                onChangeText={text => setFormData({ ...formData, name: text })}
-              />
-            </View>
+              {/* 品牌 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>品牌</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="品牌（可选）"
+                  value={formData.brand}
+                  onChangeText={text => setFormData({ ...formData, brand: text })}
+                />
+              </View>
 
-            {/* 空间 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>空间 *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.optionList}>
-                  {spaces.map(space => (
+              {/* 价格 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>价格</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="价格（可选）"
+                  value={formData.price !== undefined ? String(formData.price) : ''}
+                  onChangeText={text => setFormData({ ...formData, price: text ? parseFloat(text) : undefined })}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
+              {/* 保质期 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>保质期</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="YYYY-MM-DD（可选）"
+                  value={formData.expiryDate}
+                  onChangeText={text => setFormData({ ...formData, expiryDate: text })}
+                />
+              </View>
+
+              {/* 标签 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>标签</Text>
+                <View style={styles.tagSelection}>
+                  {tags.map(tag => (
                     <TouchableOpacity
-                      key={space.id}
+                      key={tag.id}
                       style={[
-                        styles.optionChip,
-                        formData.spaceId === space.id && styles.optionChipActive,
+                        styles.tagOption,
+                        formData.tags?.includes(tag.name) && styles.tagOptionActive,
                       ]}
-                      onPress={() => setFormData({ ...formData, spaceId: space.id })}
+                      onPress={() => {
+                        const currentTags = formData.tags || [];
+                        const newTags = currentTags.includes(tag.name)
+                          ? currentTags.filter(t => t !== tag.name)
+                          : [...currentTags, tag.name];
+                        setFormData({ ...formData, tags: newTags });
+                      }}
                     >
-                      <View style={styles.optionChipIcon}>
-                        {React.createElement(getSpaceIconComponent(space.icon || space.name), { size: 16, color: formData.spaceId === space.id ? '#FFFFFF' : '#000000' })}
-                      </View>
                       <Text style={[
-                        styles.optionChipText,
-                        formData.spaceId === space.id && styles.optionChipTextActive,
+                        styles.tagOptionText,
+                        formData.tags?.includes(tag.name) && styles.tagOptionTextActive,
                       ]}>
-                        {space.name}
+                        {tag.name}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-              </ScrollView>
-            </View>
+              </View>
 
-            {/* 分类 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>分类 *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.optionList}>
-                  {categories.map(category => (
-                    <TouchableOpacity
-                      key={category.id}
-                      style={[
-                        styles.optionChip,
-                        formData.categoryId === category.id && styles.optionChipActive,
-                      ]}
-                      onPress={() => setFormData({ ...formData, categoryId: category.id })}
-                    >
-                      <View style={styles.optionChipIcon}>
-                        {React.createElement(getCategoryIconComponent(category.icon), { size: 16, color: formData.categoryId === category.id ? '#FFFFFF' : '#000000' })}
-                      </View>
-                      <Text style={[
-                        styles.optionChipText,
-                        formData.categoryId === category.id && styles.optionChipTextActive,
-                      ]}>
-                        {category.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* 数量和单位 */}
-            <View style={styles.inputRow}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>数量</Text>
+              {/* 备注 */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>备注</Text>
                 <TextInput
-                  style={styles.modalInput}
-                  placeholder="1"
-                  value={String(formData.quantity || 1)}
-                  onChangeText={text => setFormData({ ...formData, quantity: parseInt(text) || 1 })}
-                  keyboardType="number-pad"
+                  style={[styles.modalInput, styles.modalInputMultiline]}
+                  placeholder="备注（可选）"
+                  value={formData.note}
+                  onChangeText={text => setFormData({ ...formData, note: text })}
+                  multiline
+                  numberOfLines={3}
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>单位</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="个"
-                  value={formData.unit}
-                  onChangeText={text => setFormData({ ...formData, unit: text })}
-                />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalButtonCancel}
+                  onPress={() => { setShowAddModal(false); setEditingItem(null); resetForm(); }}
+                >
+                  <Text style={styles.modalButtonCancelText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveItem}>
+                  <Text style={styles.modalButtonConfirmText}>保存</Text>
+                </TouchableOpacity>
               </View>
             </View>
-
-            {/* 品牌 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>品牌</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="品牌（可选）"
-                value={formData.brand}
-                onChangeText={text => setFormData({ ...formData, brand: text })}
-              />
-            </View>
-
-            {/* 价格 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>价格</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="价格（可选）"
-                value={formData.price !== undefined ? String(formData.price) : ''}
-                onChangeText={text => setFormData({ ...formData, price: text ? parseFloat(text) : undefined })}
-                keyboardType="decimal-pad"
-              />
-            </View>
-
-            {/* 保质期 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>保质期</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="YYYY-MM-DD（可选）"
-                value={formData.expiryDate}
-                onChangeText={text => setFormData({ ...formData, expiryDate: text })}
-              />
-            </View>
-
-            {/* 标签 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>标签</Text>
-              <View style={styles.tagSelection}>
-                {tags.map(tag => (
-                  <TouchableOpacity
-                    key={tag.id}
-                    style={[
-                      styles.tagOption,
-                      formData.tags?.includes(tag.name) && styles.tagOptionActive,
-                    ]}
-                    onPress={() => {
-                      const currentTags = formData.tags || [];
-                      const newTags = currentTags.includes(tag.name)
-                        ? currentTags.filter(t => t !== tag.name)
-                        : [...currentTags, tag.name];
-                      setFormData({ ...formData, tags: newTags });
-                    }}
-                  >
-                    <Text style={[
-                      styles.tagOptionText,
-                      formData.tags?.includes(tag.name) && styles.tagOptionTextActive,
-                    ]}>
-                      {tag.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* 备注 */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>备注</Text>
-              <TextInput
-                style={[styles.modalInput, styles.modalInputMultiline]}
-                placeholder="备注（可选）"
-                value={formData.note}
-                onChangeText={text => setFormData({ ...formData, note: text })}
-                multiline
-                numberOfLines={3}
-              />
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalButtonCancel}
-                onPress={() => { setShowAddModal(false); setEditingItem(null); resetForm(); }}
-              >
-                <Text style={styles.modalButtonCancelText}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveItem}>
-                <Text style={styles.modalButtonConfirmText}>保存</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1510,85 +1516,90 @@ export default function InventoryScreen() {
       animationType="slide"
       onRequestClose={() => setShowSpaceModal(false)}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>添加空间</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>添加空间</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>名称 *</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="空间名称"
-              value={spaceForm.name}
-              onChangeText={text => setSpaceForm({ ...spaceForm, name: text })}
-              autoFocus
-            />
-          </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>名称 *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="空间名称"
+                value={spaceForm.name}
+                onChangeText={text => setSpaceForm({ ...spaceForm, name: text })}
+                autoFocus
+              />
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>父级空间</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.optionList}>
-                <TouchableOpacity
-                  style={[
-                    styles.optionChip,
-                    spaceForm.parentId === null && styles.optionChipActive,
-                  ]}
-                  onPress={() => setSpaceForm({ ...spaceForm, parentId: null })}
-                >
-                  <Text style={[
-                    styles.optionChipText,
-                    spaceForm.parentId === null && styles.optionChipTextActive,
-                  ]}>
-                    根目录
-                  </Text>
-                </TouchableOpacity>
-                {spaces.map(space => (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>父级空间</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.optionList}>
                   <TouchableOpacity
-                    key={space.id}
                     style={[
                       styles.optionChip,
-                      spaceForm.parentId === space.id && styles.optionChipActive,
+                      spaceForm.parentId === null && styles.optionChipActive,
                     ]}
-                    onPress={() => setSpaceForm({ ...spaceForm, parentId: space.id })}
+                    onPress={() => setSpaceForm({ ...spaceForm, parentId: null })}
                   >
                     <Text style={[
                       styles.optionChipText,
-                      spaceForm.parentId === space.id && styles.optionChipTextActive,
+                      spaceForm.parentId === null && styles.optionChipTextActive,
                     ]}>
-                      {space.name}
+                      根目录
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
+                  {spaces.map(space => (
+                    <TouchableOpacity
+                      key={space.id}
+                      style={[
+                        styles.optionChip,
+                        spaceForm.parentId === space.id && styles.optionChipActive,
+                      ]}
+                      onPress={() => setSpaceForm({ ...spaceForm, parentId: space.id })}
+                    >
+                      <Text style={[
+                        styles.optionChipText,
+                        spaceForm.parentId === space.id && styles.optionChipTextActive,
+                      ]}>
+                        {space.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>备注</Text>
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMultiline]}
-              placeholder="备注（可选）"
-              value={spaceForm.note}
-              onChangeText={text => setSpaceForm({ ...spaceForm, note: text })}
-              multiline
-              numberOfLines={2}
-            />
-          </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>备注</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalInputMultiline]}
+                placeholder="备注（可选）"
+                value={spaceForm.note}
+                onChangeText={text => setSpaceForm({ ...spaceForm, note: text })}
+                multiline
+                numberOfLines={2}
+              />
+            </View>
 
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={styles.modalButtonCancel}
-              onPress={() => setShowSpaceModal(false)}
-            >
-              <Text style={styles.modalButtonCancelText}>取消</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleCreateSpace}>
-              <Text style={styles.modalButtonConfirmText}>添加</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalButtonCancel}
+                onPress={() => setShowSpaceModal(false)}
+              >
+                <Text style={styles.modalButtonCancelText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleCreateSpace}>
+                <Text style={styles.modalButtonConfirmText}>添加</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 
@@ -1604,73 +1615,78 @@ export default function InventoryScreen() {
         animationType="slide"
         onRequestClose={() => { setShowCategoryModal(false); setEditingCategory(null); }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingCategory ? '编辑分类' : '添加分类'}</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>{editingCategory ? '编辑分类' : '添加分类'}</Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>名称 *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="分类名称"
-                value={categoryForm.name}
-                onChangeText={text => setCategoryForm({ ...categoryForm, name: text })}
-                autoFocus
-              />
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>名称 *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="分类名称"
+                  value={categoryForm.name}
+                  onChangeText={text => setCategoryForm({ ...categoryForm, name: text })}
+                  autoFocus
+                />
+              </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>图标</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.optionList}>
-                  {iconOptions.map(icon => (
-                    <TouchableOpacity
-                      key={icon}
-                      style={[
-                        styles.iconOption,
-                        categoryForm.icon === icon && styles.iconOptionActive,
-                      ]}
-                      onPress={() => setCategoryForm({ ...categoryForm, icon })}
-                    >
-                      {React.createElement(getCategoryIconComponent(icon), { size: 24, color: categoryForm.color })}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>图标</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.optionList}>
+                    {iconOptions.map(icon => (
+                      <TouchableOpacity
+                        key={icon}
+                        style={[
+                          styles.iconOption,
+                          categoryForm.icon === icon && styles.iconOptionActive,
+                        ]}
+                        onPress={() => setCategoryForm({ ...categoryForm, icon })}
+                      >
+                        {React.createElement(getCategoryIconComponent(icon), { size: 24, color: categoryForm.color })}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>颜色</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.optionList}>
-                  {colorOptions.map(color => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[
-                        styles.colorOption,
-                        { backgroundColor: color },
-                        categoryForm.color === color && styles.colorOptionActive,
-                      ]}
-                      onPress={() => setCategoryForm({ ...categoryForm, color })}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>颜色</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.optionList}>
+                    {colorOptions.map(color => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          categoryForm.color === color && styles.colorOptionActive,
+                        ]}
+                        onPress={() => setCategoryForm({ ...categoryForm, color })}
+                      />
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalButtonCancel}
-                onPress={() => { setShowCategoryModal(false); setEditingCategory(null); }}
-              >
-                <Text style={styles.modalButtonCancelText}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveCategory}>
-                <Text style={styles.modalButtonConfirmText}>保存</Text>
-              </TouchableOpacity>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalButtonCancel}
+                  onPress={() => { setShowCategoryModal(false); setEditingCategory(null); }}
+                >
+                  <Text style={styles.modalButtonCancelText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveCategory}>
+                  <Text style={styles.modalButtonConfirmText}>保存</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     );
   };
@@ -1686,53 +1702,58 @@ export default function InventoryScreen() {
         animationType="slide"
         onRequestClose={() => { setShowTagModal(false); setEditingTag(null); }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingTag ? '编辑标签' : '添加标签'}</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>{editingTag ? '编辑标签' : '添加标签'}</Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>名称 *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="标签名称"
-                value={tagForm.name}
-                onChangeText={text => setTagForm({ ...tagForm, name: text })}
-                autoFocus
-              />
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>名称 *</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="标签名称"
+                  value={tagForm.name}
+                  onChangeText={text => setTagForm({ ...tagForm, name: text })}
+                  autoFocus
+                />
+              </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>颜色</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.optionList}>
-                  {colorOptions.map(color => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[
-                        styles.colorOption,
-                        { backgroundColor: color },
-                        tagForm.color === color && styles.colorOptionActive,
-                      ]}
-                      onPress={() => setTagForm({ ...tagForm, color })}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>颜色</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.optionList}>
+                    {colorOptions.map(color => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorOption,
+                          { backgroundColor: color },
+                          tagForm.color === color && styles.colorOptionActive,
+                        ]}
+                        onPress={() => setTagForm({ ...tagForm, color })}
+                      />
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalButtonCancel}
-                onPress={() => { setShowTagModal(false); setEditingTag(null); }}
-              >
-                <Text style={styles.modalButtonCancelText}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveTag}>
-                <Text style={styles.modalButtonConfirmText}>保存</Text>
-              </TouchableOpacity>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalButtonCancel}
+                  onPress={() => { setShowTagModal(false); setEditingTag(null); }}
+                >
+                  <Text style={styles.modalButtonCancelText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalButtonConfirm} onPress={handleSaveTag}>
+                  <Text style={styles.modalButtonConfirmText}>保存</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     );
   };
