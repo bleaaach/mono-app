@@ -26,6 +26,7 @@ import {
   exportAllLifeLogsToCSV,
 } from '../utils/backupUtils';
 import { FontSizes, scaleFont } from '../utils/responsive';
+import { DownloadIcon, UploadIcon, FileSpreadsheetIcon, TrashIcon } from '../components/Icons';
 
 export default function SettingsScreen() {
   const [metadata, setMetadata] = useState<BackupMetadata | null>(null);
@@ -264,7 +265,7 @@ export default function SettingsScreen() {
             disabled={isExporting}
           >
             <View style={styles.menuIcon}>
-              <Text style={styles.iconText}>↓</Text>
+              <DownloadIcon size={20} color={Colors.background} />
             </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>导出数据 (JSON)</Text>
@@ -277,7 +278,7 @@ export default function SettingsScreen() {
             onPress={() => setShowImportModal(true)}
           >
             <View style={styles.menuIcon}>
-              <Text style={styles.iconText}>↑</Text>
+              <UploadIcon size={20} color={Colors.background} />
             </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>导入数据</Text>
@@ -303,8 +304,8 @@ export default function SettingsScreen() {
               }
             }}
           >
-            <View style={[styles.menuIcon, { backgroundColor: '#4CAF50' }]}>
-              <Text style={styles.iconText}>CSV</Text>
+            <View style={[styles.menuIcon, { backgroundColor: '#059669' }]}>
+              <FileSpreadsheetIcon size={20} color={Colors.background} />
             </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>导出日志 (CSV)</Text>
@@ -322,7 +323,7 @@ export default function SettingsScreen() {
             onPress={handleClearAll}
           >
             <View style={[styles.menuIcon, styles.dangerIcon]}>
-              <Text style={styles.iconText}>×</Text>
+              <TrashIcon size={20} color={Colors.background} />
             </View>
             <View style={styles.menuContent}>
               <Text style={[styles.menuTitle, styles.dangerText]}>清空所有数据</Text>
