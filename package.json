@@ -1,5 +1,5 @@
 {
-  "name": "mono-app",
+  "name": "mono",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
