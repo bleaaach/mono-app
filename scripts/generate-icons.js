@@ -5,31 +5,31 @@ const path = require('path');
 const assetsDir = path.join(__dirname, '..', 'assets');
 const androidResDir = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'res');
 
-// 新的图标设计 - 暖色背景 + 三个透明度渐变的模块
+// 新的图标设计 - 暖色背景 + 三个更小的透明度渐变模块
 const iconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- 暖色圆角背景 -->
   <rect width="1024" height="1024" rx="230" fill="#FEFCF9"/>
   
-  <!-- 左上实体模块 -->
-  <rect x="212" y="212" width="280" height="280" rx="40" fill="#5D5D5D"/>
+  <!-- 左上实体模块 - 缩小到200x200，位置调整到287 -->
+  <rect x="287" y="287" width="200" height="200" rx="32" fill="#5D5D5D"/>
   
   <!-- 右上半透明模块 -->
-  <rect x="532" y="212" width="280" height="280" rx="40" fill="#5D5D5D" opacity="0.6"/>
+  <rect x="537" y="287" width="200" height="200" rx="32" fill="#5D5D5D" opacity="0.6"/>
   
   <!-- 左下更透明模块 -->
-  <rect x="212" y="532" width="280" height="280" rx="40" fill="#5D5D5D" opacity="0.3"/>
+  <rect x="287" y="537" width="200" height="200" rx="32" fill="#5D5D5D" opacity="0.3"/>
 </svg>`;
 
 // Android 自适应图标版本（无背景，只保留图形）
 const adaptiveIconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <!-- 左上实体模块 -->
-  <rect x="212" y="212" width="280" height="280" rx="40" fill="#5D5D5D"/>
+  <rect x="287" y="287" width="200" height="200" rx="32" fill="#5D5D5D"/>
   
   <!-- 右上半透明模块 -->
-  <rect x="532" y="212" width="280" height="280" rx="40" fill="#5D5D5D" opacity="0.6"/>
+  <rect x="537" y="287" width="200" height="200" rx="32" fill="#5D5D5D" opacity="0.6"/>
   
   <!-- 左下更透明模块 -->
-  <rect x="212" y="532" width="280" height="280" rx="40" fill="#5D5D5D" opacity="0.3"/>
+  <rect x="287" y="537" width="200" height="200" rx="32" fill="#5D5D5D" opacity="0.3"/>
 </svg>`;
 
 // 启动屏图标（稍小一点，居中显示）
@@ -38,13 +38,13 @@ const splashIconSvg = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" f
   <rect width="1024" height="1024" rx="230" fill="#FEFCF9"/>
   
   <!-- 左上实体模块 -->
-  <rect x="262" y="262" width="220" height="220" rx="32" fill="#5D5D5D"/>
+  <rect x="312" y="312" width="160" height="160" rx="28" fill="#5D5D5D"/>
   
   <!-- 右上半透明模块 -->
-  <rect x="542" y="262" width="220" height="220" rx="32" fill="#5D5D5D" opacity="0.6"/>
+  <rect x="512" y="312" width="160" height="160" rx="28" fill="#5D5D5D" opacity="0.6"/>
   
   <!-- 左下更透明模块 -->
-  <rect x="262" y="542" width="220" height="220" rx="32" fill="#5D5D5D" opacity="0.3"/>
+  <rect x="312" y="512" width="160" height="160" rx="28" fill="#5D5D5D" opacity="0.3"/>
 </svg>`;
 
 // Favicon 版本（小尺寸简化版）
@@ -53,13 +53,13 @@ const faviconSvg = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" 
   <rect width="48" height="48" rx="10" fill="#FEFCF9"/>
   
   <!-- 左上实体模块 -->
-  <rect x="10" y="10" width="13" height="13" rx="2" fill="#5D5D5D"/>
+  <rect x="12" y="12" width="10" height="10" rx="2" fill="#5D5D5D"/>
   
   <!-- 右上半透明模块 -->
-  <rect x="25" y="10" width="13" height="13" rx="2" fill="#5D5D5D" opacity="0.6"/>
+  <rect x="26" y="12" width="10" height="10" rx="2" fill="#5D5D5D" opacity="0.6"/>
   
   <!-- 左下更透明模块 -->
-  <rect x="10" y="25" width="13" height="13" rx="2" fill="#5D5D5D" opacity="0.3"/>
+  <rect x="12" y="26" width="10" height="10" rx="2" fill="#5D5D5D" opacity="0.3"/>
 </svg>`;
 
 // Android 图标尺寸配置
